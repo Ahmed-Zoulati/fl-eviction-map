@@ -3,7 +3,9 @@
 __pycache__/
 
 # Local datasets (keep these out of GitHub)
-data/
+/data/
+!docs/data/
+!docs/data/*.geojson
 
 # OS junk
 .DS_Store
