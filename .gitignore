@@ -1,0 +1,15 @@
+# Python env / caches
+.venv/
+__pycache__/
+
+# Local datasets (keep these out of GitHub)
+data/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Big artifacts you might create locally
+*.mbtiles
+*.7z
+*.zip
