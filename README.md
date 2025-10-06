@@ -1,32 +1,51 @@
+# Florida Eviction Map (ZIP level, 2004–2016)
 
-# Florida ZIP Eviction Map — Starter Kit
+**Live map:** https://ahmed-zoulati.github.io/fl-eviction-map/
 
-This is a from-scratch, step-by-step starter to build an interactive map like Eviction Lab’s, but at ZIP code (ZCTA) level for Florida (2004–2016).
+This interactive map visualizes eviction dynamics across Florida ZIP codes (ZCTAs) from **2004–2016**. It combines renter population, eviction filings, and hurricane/tropical-storm treatment flags so you can explore patterns year by year.
 
-## Quick steps
+## What the map shows
 
-1) Put your CSV at `data/fl_evictions_2004_2016.csv` with columns: `zip,year,filings,households`.
-2) Download and place these in `data/`:
-   - `cb_2010_us_zcta510_500k.zip` (ZCTA 2010)
-   - `cb_2018_us_state_500k.zip` (US states)
-3) Build GeoJSON:
-   ```bash
-   python scripts/build_geojson.py      --csv data/fl_evictions_2004_2016.csv      --zcta data/cb_2010_us_zcta510_500k.zip      --states data/cb_2018_us_state_500k.zip      --state_name "Florida"      --zip_col zip --year_col year --filings_col filings --households_col households      --out data/fl_zip_evictions.geojson
-   ```
-4) Make vector tiles (Tippecanoe):
-   ```bash
-   tippecanoe -o data/fl_zip_evictions.mbtiles -l zips -zg --drop-densest-as-needed      --read-parallel --force      --include=zip --include=year --include=filings --include=households --include=filing_rate      data/fl_zip_evictions.geojson
-   ```
-5) Serve tiles (Docker):
-   ```bash
-   docker run -it --rm -v $PWD:/data -p 8080:8080 maptiler/tileserver-gl
-   ```
-6) Edit `web/index.html` and set:
-   ```js
-   const TILE_URL_TEMPLATE = "http://localhost:8080/data/fl_zip_evictions/{z}/{x}/{y}.pbf";
-   ```
-7) Start the web app:
-   ```bash
-   cd web && python -m http.server 5500
-   # open http://localhost:5500
-   ```
+- **Choropleth (polygons):** ZIPs colored by **renter households** (renter-occupied units).  
+  Darker purple = more renter households.
+
+- **Red circles (optional):** One per ZIP, sized by a **rate**:
+  - **Filing rate (%)** = filings / renter households × 100  
+  - **Eviction rate (%)** = evictions / renter households × 100  
+  Use the “Circle metric” dropdown to switch.
+
+- **Storm outlines (optional):**
+  - **Orange solid** = ZIP treated by a **hurricane** that year  
+  - **Blue dashed** = ZIP treated by a **tropical storm** that year  
+  Toggle each in the panel.
+
+## How to use it
+
+- **Year slider**: switch between 2004–2016; all layers update.  
+- **Circle metric**: choose *Filing rate* or *Eviction rate*.  
+- **Show circles**: show/hide the red circles.  
+- **ZIP search**: type a 5-digit ZIP (e.g., `33139`) and press **Go**.  
+- **Reset**: recenter on Florida.  
+- **Hover**: see ZIP, year, rates, counts, households, and storm treatment.
+
+## Data & methodology
+
+- **Inputs (weekly → yearly):**
+  - `filings`, `evict` aggregated to **ZIP × Year**
+  - `RenterOccupiedUnits` averaged within the year → **households**
+  - Rates:
+    - `filing_rate = filings / households × 100`
+    - `evict_rate  = evict / households × 100`
+- **Storm treatment (optional):** ZIP × Year flags:
+  - `treated_hurr` (1/0), `treated_ts` (1/0), optional `storm_name`
+- **Boundaries:** ZCTAs (Census TIGER/Line, 2022).  
+  *Note:* ZCTAs approximate USPS ZIP codes; small differences are normal.
+
+## Tech stack
+
+- **Frontend:** MapLibre GL JS (renders a static GeoJSON)
+- **Data prep:** Python (`pandas`, `geopandas`, `shapely`, `pyogrio`)
+- **Hosting:** GitHub Pages (site in `/docs`)
+
+## Repo layout
+
