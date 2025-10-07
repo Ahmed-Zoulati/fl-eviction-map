@@ -1,0 +1,20 @@
+{
+  "term": "Group:Post",
+  "estimate": 0.007,
+  "se": 0.052,
+  "t": 0.125,
+  "p": 0.9,
+  "ci_low": -0.096,
+  "ci_high": 0.11,
+  "meta": {
+    "dep_var": "weighted_evict",
+    "fixed_effects": "Hurricane_ZIP+Hurricane_event",
+    "observations": 81054,
+    "rmse": 1.364,
+    "r2": 0.645
+  },
+  "study_name": "both_storms_evict",
+  "label": "Hurricane + Tropical \u2014 Evictions",
+  "storm_type": "both",
+  "outcome": "evict"
+}

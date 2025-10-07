@@ -69,6 +69,13 @@
         </div>
       </div>
 
+      <div class="row" style="margin-top:8px">
+        <a href="./event-study/" style="text-decoration:none;border:1px solid #ddd;border-radius:8px;padding:6px 10px;background:#fff;display:inline-block">
+          Event study ➜
+        </a>
+      </div>
+
+
       <div class="hint">Hover a ZIP to see details</div>
     </div>
 
@@ -79,7 +86,7 @@
       // === Load GeoJSON directly (no tiles needed) ===
       // IMPORTANT: we'll serve the site from the project root,
       // so this relative path points up one level to /data/
-      const GEOJSON_URL = "data/fl_zip_evictions.min.geojson?v=gh1";
+      const GEOJSON_URL = "data/fl_zip_evictions.min.geojson?v=ghX";
       console.log("Using GEOJSON_URL (GH):", GEOJSON_URL);
 
       const map = new maplibregl.Map({

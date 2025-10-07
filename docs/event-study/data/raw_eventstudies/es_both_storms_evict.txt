@@ -1,0 +1,13 @@
+    Estimate	Std. Error	t value	Pr(>|t|)	2.5%	97.5%
+Coefficient						
+C(event_date_months, contr.treatment(base=-1))[-5]:Group	-0.036113	0.100225	-0.360321	0.718699	-0.232840	0.160614
+C(event_date_months, contr.treatment(base=-1))[-4]:Group	-0.087320	0.097619	-0.894499	0.371316	-0.278932	0.104292
+C(event_date_months, contr.treatment(base=-1))[-3]:Group	-0.060066	0.096107	-0.624991	0.532150	-0.248710	0.128578
+C(event_date_months, contr.treatment(base=-1))[-2]:Group	0.021849	0.098489	0.221842	0.824492	-0.171471	0.215169
+C(event_date_months, contr.treatment(base=-1))[0]:Group	-0.033269	0.097056	-0.342783	0.731849	-0.223775	0.157237
+C(event_date_months, contr.treatment(base=-1))[1]:Group	-0.076845	0.119602	-0.642507	0.520723	-0.311607	0.157916
+C(event_date_months, contr.treatment(base=-1))[2]:Group	0.058872	0.108464	0.542782	0.587427	-0.154026	0.271771
+C(event_date_months, contr.treatment(base=-1))[3]:Group	0.067473	0.098291	0.686463	0.492614	-0.125457	0.260404
+C(event_date_months, contr.treatment(base=-1))[4]:Group	-0.110654	0.102325	-1.081396	0.279838	-0.311503	0.090195
+C(event_date_months, contr.treatment(base=-1))[5]:Group	0.015187	0.100471	0.151154	0.879891	-0.182023	0.212396
+C(event_date_months, contr.treatment(base=-1))[6]:Group	-0.104205	0.104410	-0.998030	0.318558	-0.309146	0.100737
