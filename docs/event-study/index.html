@@ -89,5 +89,33 @@
   </footer>
 
   <script src="./js/app.js"></script>
+  <a href="../" style="
+    position:fixed; top:14px; left:14px; z-index:1000;
+    background:#fff; border:2px solid #cfd3d7; border-radius:12px;
+    padding:10px 16px; text-decoration:none; color:#111; font-weight:600; font-size:16px;
+    box-shadow:0 2px 8px rgba(0,0,0,.12); letter-spacing:.2px;
+  ">
+    ← Back to map
+  </a>
+
+  <a href="../" id="backBtn" style="
+    position:fixed; top:16px; left:16px; z-index:1100;
+    background:#fff; border:3px solid #94a3b8; border-radius:14px;
+    padding:14px 22px; font-size:20px; font-weight:700; line-height:1.1;
+    color:#111; text-decoration:none; letter-spacing:.2px;
+    box-shadow:0 4px 14px rgba(0,0,0,.15);">
+    ← Back to map
+  </a>
+  <script>
+    (function(){
+      const b = document.getElementById('backBtn');
+      b.style.transition = 'transform 120ms ease';
+      b.addEventListener('mouseenter', ()=> b.style.transform='scale(1.06)');
+      b.addEventListener('mouseleave', ()=> b.style.transform='scale(1)');
+    })();
+  </script>
+
+
+
 </body>
 </html>
