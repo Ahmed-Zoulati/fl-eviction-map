@@ -20,13 +20,6 @@
         <span id="yearValue">2016</span>
       </div>
 
-      <!-- Quick nav to subpage -->
-      <div class="row" id="nav-row" style="margin-top:6px">
-        <a href="./event-study/" style="text-decoration:none;border:1px solid #ddd;border-radius:8px;padding:6px 10px;background:#fff;display:inline-block">
-          Event study ➜
-        </a>
-      </div>
-
 
       <!-- Circles metric -->
       <div class="row">
@@ -406,5 +399,27 @@
 
     </script>
     </script>
+    <a href="./event-study/" id="eventStudyBtn" style="
+      position:fixed; top:16px; right:16px; z-index:1100;
+      background:#fff; border:3px solid #94a3b8; border-radius:14px;
+      padding:14px 22px; font-size:20px; font-weight:700; line-height:1.1;
+      color:#111; text-decoration:none; letter-spacing:.2px;
+      box-shadow:0 4px 14px rgba(0,0,0,.15);">
+      📈 Event study
+    </a>
+    <script>
+      // subtle hover grow
+      (function(){
+        const b = document.getElementById('eventStudyBtn');
+        b.style.transition = 'transform 120ms ease';
+        b.addEventListener('mouseenter', ()=> b.style.transform='scale(1.06)');
+        b.addEventListener('mouseleave', ()=> b.style.transform='scale(1)');
+      })();
+    </script>
+
+    
+
+
+
   </body>
 </html>
