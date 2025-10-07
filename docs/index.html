@@ -80,8 +80,11 @@
       // === Load GeoJSON directly (no tiles needed) ===
       // IMPORTANT: we'll serve the site from the project root,
       // so this relative path points up one level to /data/
-      const GEOJSON_URL = "data/fl_zip_evictions.min.geojson?v=ghX";
-      console.log("Using GEOJSON_URL (GH):", GEOJSON_URL);
+      // ZIP polygons for GitHub Pages
+      const GEOJSON_URL = "data/fl_zip_evictions.min.geojson?v=gh";
+      // Storm CONE polygons for GitHub Pages  ⬅️ add this
+      const STORM_CONES_URL = "storms/storm_cones.min.geojson?v=gh";
+      console.log("Using STORM_CONES_URL (docs):", STORM_CONES_URL);
 
       const map = new maplibregl.Map({
         container: "map",
@@ -169,6 +172,45 @@
           "paint": { "line-color": "#fff", "line-width": 0.5 },
           "filter": yearFilterExpr(currentYear())
         });
+
+        // ---- Storm CONES (polygons) ----
+        map.addSource("stormCones", { type: "geojson", data: STORM_CONES_URL });
+
+        // Hurricanes (solid orange)
+        map.addLayer({
+          id: "cone-hurr-fill",
+          type: "fill",
+          source: "stormCones",
+          paint: { "fill-color": "#f97316", "fill-opacity": 0.14 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "hurricane"]]
+        });
+        map.addLayer({
+          id: "cone-hurr-outline",
+          type: "line",
+          source: "stormCones",
+          paint: { "line-color": "#f97316", "line-width": 1.2, "line-opacity": 0.9 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "hurricane"]]
+        });
+
+        // Tropical storms (blue dashed)
+        map.addLayer({
+          id: "cone-ts-fill",
+          type: "fill",
+          source: "stormCones",
+          paint: { "fill-color": "#0ea5e9", "fill-opacity": 0.12 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "tropical"]]
+        });
+        map.addLayer({
+          id: "cone-ts-outline",
+          type: "line",
+          source: "stormCones",
+          paint: { "line-color": "#0ea5e9", "line-width": 1.2, "line-dasharray": [2,2], "line-opacity": 0.9 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "tropical"]]
+        });
+
+        // Make cones respect current checkbox state on first load
+        applyStormVis();
+
 
         // Hover tooltip
         const tooltip = document.getElementById("tooltip");
@@ -316,6 +358,11 @@
         const visT = showTs.checked ? 'visible' : 'none';
         if (map.getLayer('storm-hurr')) map.setLayoutProperty('storm-hurr', 'visibility', visH);
         if (map.getLayer('storm-ts'))   map.setLayoutProperty('storm-ts',   'visibility', visT);
+        // also toggle CONE layers
+        if (map.getLayer('cone-hurr-fill'))    map.setLayoutProperty('cone-hurr-fill',    'visibility', visH);
+        if (map.getLayer('cone-hurr-outline')) map.setLayoutProperty('cone-hurr-outline', 'visibility', visH);
+        if (map.getLayer('cone-ts-fill'))      map.setLayoutProperty('cone-ts-fill',      'visibility', visT);
+        if (map.getLayer('cone-ts-outline'))   map.setLayoutProperty('cone-ts-outline',   'visibility', visT);
       }
 
       showHurr.addEventListener('change', applyStormVis);
@@ -336,6 +383,15 @@
         if (map.getLayer("storm-ts"))   map.setFilter("storm-ts",   ["all", yf, ["==", ["get", "treated_ts"], 1]]);
         // ⬇️ add this line
         if (map.getLayer("zip-circles")) map.setFilter("zip-circles", yf);
+        // Cones follow the selected year
+        if (map.getLayer("cone-hurr-fill"))
+          map.setFilter("cone-hurr-fill", ["all", yf, ["==", ["get","storm_type"], "hurricane"]]);
+        if (map.getLayer("cone-hurr-outline"))
+          map.setFilter("cone-hurr-outline", ["all", yf, ["==", ["get","storm_type"], "hurricane"]]);
+        if (map.getLayer("cone-ts-fill"))
+          map.setFilter("cone-ts-fill", ["all", yf, ["==", ["get","storm_type"], "tropical"]]);
+        if (map.getLayer("cone-ts-outline"))
+          map.setFilter("cone-ts-outline", ["all", yf, ["==", ["get","storm_type"], "tropical"]]);
       });
 
     <!-- Add BELOW your existing code, just before </script> -->
