@@ -5,7 +5,7 @@
 */
 
 /* ================== DATASET SWITCH (top viewer) ==================
-   Default = CORE dataset (../data/processed/...).
+   Default = CORE dataset (data/processed/...).
    You can optionally load FEMA into the TOP viewer via URL params:
      ?set=fema&method=history&storm=hurricane
    The FEMA section below (second pair) still uses its own controls.
@@ -15,17 +15,17 @@ const SET    = (q.get("set") || "core").toLowerCase();      // "core" | "fema"
 const METHOD = (q.get("method") || "").toLowerCase();       // "history" | "psm" (when SET=fema)
 const STORM  = (q.get("storm")  || "").toLowerCase();       // e.g. "hurricane" (optional)
 
-/* Build paths for the TOP viewer */
+/* Build paths for the TOP viewer (GH Pages-friendly: no "../") */
 const paths = (SET === "fema")
   ? {
-      manifest: "../data_fema/processed/index.json",
-      es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
-      did: (slug) => `../data_fema/processed/did/${slug}.json`,
+      manifest: "data_fema/processed/index.json?v=gh",
+      es:  (slug) => `data_fema/processed/event_studies/${slug}.json?v=gh`,
+      did: (slug) => `data_fema/processed/did/${slug}.json?v=gh`,
     }
   : {
-      manifest: "../data/processed/index.json",
-      es:  (slug) => `../data/processed/event_studies/${slug}.json`,
-      did: (slug) => `../data/processed/did/${slug}.json`,
+      manifest: "data/processed/index.json?v=gh",
+      es:  (slug) => `data/processed/event_studies/${slug}.json?v=gh`,
+      did: (slug) => `data/processed/did/${slug}.json?v=gh`,
     };
 
 const state = {
@@ -47,7 +47,7 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-/* If SET=fema, we can filter by method for the TOP viewer */
+/* If SET=fema, filter by method for the TOP viewer (only when valid) */
 function buildMapFromManifest(manifest, methodFilter=null) {
   const map = {};
   for (const s of (manifest.studies || [])) {
@@ -63,8 +63,9 @@ function buildMapFromManifest(manifest, methodFilter=null) {
 
 async function loadManifest() {
   const j = await fetchJSON(paths.manifest);
+  const validMethod = (METHOD === "history" || METHOD === "psm") ? METHOD : null;
   state.manifest = j;
-  state.map = buildMapFromManifest(j, (SET === "fema" ? METHOD : null));
+  state.map = buildMapFromManifest(j, (SET === "fema" ? validMethod : null));
 
   const sel = document.getElementById("storm-select");
   sel.innerHTML = "";
@@ -116,14 +117,12 @@ const referenceLinesPlugin = {
     const ctx = chart.ctx;
     const labels = chart.data.labels;
 
-    // helper: pixel for a label value (category)
     const xForK = (kVal) => {
       const idx = labels.indexOf(kVal);
       if (idx === -1) return null;
       return x.getPixelForTick(idx);
     };
 
-    // compute midpoint X between the last negative tick (<0) and the first non-negative tick (>=0)
     const idxLeft = (() => {
       let best = -1;
       for (let i = 0; i < labels.length; i++) if (+labels[i] < 0) best = i;
@@ -138,9 +137,8 @@ const referenceLinesPlugin = {
     if (idxLeft !== -1 && idxRight !== -1) {
       const xLeft = x.getPixelForTick(idxLeft);
       const xRight = x.getPixelForTick(idxRight);
-      xRef = (xLeft + xRight) / 2; // halfway between k<0 and k>=0 -> visually ≈ -1
+      xRef = (xLeft + xRight) / 2;
     } else {
-      // fallback: try exact -2 and 0 if present
       const xNeg2 = xForK(-2);
       const xZero = xForK(0);
       if (xNeg2 !== null && xZero !== null) xRef = (xNeg2 + xZero) / 2;
@@ -154,14 +152,12 @@ const referenceLinesPlugin = {
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
 
-    // horizontal dashed zero line
     const yZero = y.getPixelForValue(0);
     ctx.beginPath();
     ctx.moveTo(area.left, yZero);
     ctx.lineTo(area.right, yZero);
     ctx.stroke();
 
-    // vertical dashed ref line at midpoint
     if (xRef !== null && isFinite(xRef)) {
       ctx.beginPath();
       ctx.moveTo(xRef, area.top);
@@ -191,48 +187,21 @@ function drawChart(canvasId, data) {
     data: {
       labels: data.labels,
       datasets: [
-        {
-          label: "Estimate",
-          data: data.est,
-          borderWidth: 2,
-          pointRadius: 2,
-          tension: 0.2
-        },
-        {
-          label: "CI low",
-          data: data.ciL,
-          borderWidth: 1,
-          borderDash: [4,3],
-          pointRadius: 0
-        },
-        {
-          label: "CI high",
-          data: data.ciH,
-          borderWidth: 1,
-          borderDash: [4,3],
-          pointRadius: 0
-        }
+        { label: "Estimate", data: data.est, borderWidth: 2, pointRadius: 2, tension: 0.2 },
+        { label: "CI low",   data: data.ciL, borderWidth: 1, borderDash: [4,3], pointRadius: 0 },
+        { label: "CI high",  data: data.ciH, borderWidth: 1, borderDash: [4,3], pointRadius: 0 }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        x: {
-          title: { display: true, text: "Event time (months)" },
-          grid: { display: false }
-        },
-        y: {
-          title: { display: true, text: "Coefficient" }
-        }
+        x: { title: { display: true, text: "Event time (months)" }, grid: { display: false } },
+        y: { title: { display: true, text: "Coefficient" } }
       },
       plugins: {
         legend: { display: true },
-        tooltip: {
-          callbacks: {
-            title: (items)=> `k = ${items[0].label}`
-          }
-        },
+        tooltip: { callbacks: { title: (items)=> `k = ${items[0].label}` } },
         referenceLines: {}
       }
     }
@@ -264,8 +233,8 @@ async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey,
 
   if (!slug) {
     if (state.charts[chartKey]) { state.charts[chartKey].destroy(); state.charts[chartKey] = null; }
-    missingEl.style.display = "block";
-    cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
+    if (missingEl) missingEl.style.display = "block";
+    if (cap) cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
     showDid({}, didPrefix);
     return;
   }
@@ -275,9 +244,8 @@ async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey,
     const data = prepareChartData(es);
     const chart = drawChart(canvasId, data);
     state.charts[chartKey] = chart;
-    missingEl.style.display = "none";
-    cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
-    // DiD
+    if (missingEl) missingEl.style.display = "none";
+    if (cap) cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
     try {
       const did = await fetchJSON(paths.did(slug));
       showDid(did, didPrefix);
@@ -287,8 +255,8 @@ async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey,
   } catch (e) {
     console.error(e);
     if (state.charts[chartKey]) { state.charts[chartKey].destroy(); state.charts[chartKey] = null; }
-    missingEl.style.display = "block";
-    cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
+    if (missingEl) missingEl.style.display = "block";
+    if (cap) cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
     showDid({}, didPrefix);
   }
 }
@@ -321,22 +289,13 @@ async function boot() {
     if (sel.value) await loadPair(sel.value);
   });
 
-  // save buttons
   document.getElementById("save-evict").addEventListener("click", () => {
-    const ch = state.charts.evict;
-    if (!ch) return;
-    const a = document.createElement("a");
-    a.href = ch.toBase64Image();
-    a.download = "event-study_evictions.png";
-    a.click();
+    const ch = state.charts.evict; if (!ch) return;
+    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_evictions.png"; a.click();
   });
   document.getElementById("save-filing").addEventListener("click", () => {
-    const ch = state.charts.filing;
-    if (!ch) return;
-    const a = document.createElement("a");
-    a.href = ch.toBase64Image();
-    a.download = "event-study_filings.png";
-    a.click();
+    const ch = state.charts.filing; if (!ch) return;
+    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_filings.png"; a.click();
   });
 }
 
@@ -347,28 +306,23 @@ boot().catch(err => {
 
 /* ========================= FEMA SECTION =========================
    FEMA results (second pair) with its own method/cohort controls.
-   Fixes slug naming to match your files:
+   Slugs:
    - FEMA cohort:  fema_{method}_hurricane_{outcome}.json
    - No-FEMA:      fema_{method}_nofema_hurricane_{outcome}.json
 */
 const femaPaths = {
-  es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
-  did: (slug) => `../data_fema/processed/did/${slug}.json`,
+  es:  (slug) => `data_fema/processed/event_studies/${slug}.json?v=gh`,
+  did: (slug) => `data_fema/processed/did/${slug}.json?v=gh`,
 };
 
 // Keep separate chart refs for FEMA
 state.femaCharts = { evict: null, filing: null };
 
-// Build slug names from method + cohort + outcome
 function femaSlug(method, cohort, outcome) {
-  // FEMA cohort does NOT include "fema" in filename
-  if (cohort === "nofema") {
-    return `fema_${method}_nofema_hurricane_${outcome}`;
-  }
+  if (cohort === "nofema") return `fema_${method}_nofema_hurricane_${outcome}`;
   return `fema_${method}_hurricane_${outcome}`;
 }
 
-// Write DiD numbers into the FEMA cards
 function showDidInto(prefixBase, did) {
   const q = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const m = did?.meta || {};
@@ -385,11 +339,9 @@ function showDidInto(prefixBase, did) {
   q(`${prefixBase}-r2`,   m.r2 ?? "—");
 }
 
-// Load one FEMA chart + DiD
 async function loadFemaOne(method, cohort, outcome, opt) {
   const { canvasId, captionId, missingId, chartKey, didPrefixBase } = opt;
 
-  // destroy existing chart on this canvas if any
   const existing = state.femaCharts[chartKey];
   if (existing && existing.canvas && existing.canvas.id === canvasId) {
     existing.destroy();
@@ -408,7 +360,6 @@ async function loadFemaOne(method, cohort, outcome, opt) {
     if (missingEl) missingEl.style.display = "none";
     if (capEl) capEl.textContent = "Ref line drawn midway between k = −2 and k = 0";
 
-    // Try DiD
     try {
       const did = await fetchJSON(femaPaths.did(slug));
       showDidInto(didPrefixBase, did);
@@ -423,11 +374,10 @@ async function loadFemaOne(method, cohort, outcome, opt) {
   }
 }
 
-// Load the FEMA pair (Evictions + Filings)
 async function loadFemaPair() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
-  if (!methodSel || !cohortSel) return; // FEMA section not on page
+  if (!methodSel || !cohortSel) return;
 
   const method = methodSel.value;        // "history" | "psm"
   const cohort = cohortSel.value;        // "fema" | "nofema"
@@ -450,7 +400,6 @@ async function loadFemaPair() {
   ]);
 }
 
-// Initialize FEMA UI (called after the main boot has run)
 function bootFema() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
@@ -458,35 +407,23 @@ function bootFema() {
   const saveE = document.getElementById("fema-save-evict");
   const saveF = document.getElementById("fema-save-filing");
 
-  if (!methodSel || !cohortSel) return; // FEMA section not present
+  if (!methodSel || !cohortSel) return;
 
-  // Initial load
   loadFemaPair();
 
-  // Change handlers
   methodSel.addEventListener("change", loadFemaPair);
   cohortSel.addEventListener("change", loadFemaPair);
   if (refreshBtn) refreshBtn.addEventListener("click", loadFemaPair);
 
-  // Save PNG buttons
   if (saveE) saveE.addEventListener("click", () => {
-    const ch = state.femaCharts.evict;
-    if (!ch) return;
-    const a = document.createElement("a");
-    a.href = ch.toBase64Image();
-    a.download = "event-study_FEMA_evictions.png";
-    a.click();
+    const ch = state.femaCharts.evict; if (!ch) return;
+    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_FEMA_evictions.png"; a.click();
   });
   if (saveF) saveF.addEventListener("click", () => {
-    const ch = state.femaCharts.filing;
-    if (!ch) return;
-    const a = document.createElement("a");
-    a.href = ch.toBase64Image();
-    a.download = "event-study_FEMA_filings.png";
-    a.click();
+    const ch = state.femaCharts.filing; if (!ch) return;
+    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_FEMA_filings.png"; a.click();
   });
 }
 
-// Run FEMA boot (after main boot is scheduled)
 bootFema();
 /* ======================= END FEMA SECTION ======================= */
