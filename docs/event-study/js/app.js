@@ -4,13 +4,29 @@
    - Draws vertical dashed ref line at midpoint between k=-2 and k=0 (≈ -1) and horizontal dashed zero line
 */
 
-const paths = {
-  manifest: "data/processed/index.json",
-  es: (slug) => `data/processed/event_studies/${slug}.json`,
-  did: (slug) => `data/processed/did/${slug}.json`,
-};
-console.log("Event-study paths:", paths);
+/* ================== DATASET SWITCH (top viewer) ==================
+   Default = CORE dataset (../data/processed/...).
+   You can optionally load FEMA into the TOP viewer via URL params:
+     ?set=fema&method=history&storm=hurricane
+   The FEMA section below (second pair) still uses its own controls.
+*/
+const q = new URLSearchParams(location.search);
+const SET    = (q.get("set") || "core").toLowerCase();      // "core" | "fema"
+const METHOD = (q.get("method") || "").toLowerCase();       // "history" | "psm" (when SET=fema)
+const STORM  = (q.get("storm")  || "").toLowerCase();       // e.g. "hurricane" (optional)
 
+/* Build paths for the TOP viewer */
+const paths = (SET === "fema")
+  ? {
+      manifest: "../data_fema/processed/index.json",
+      es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
+      did: (slug) => `../data_fema/processed/did/${slug}.json`,
+    }
+  : {
+      manifest: "../data/processed/index.json",
+      es:  (slug) => `../data/processed/event_studies/${slug}.json`,
+      did: (slug) => `../data/processed/did/${slug}.json`,
+    };
 
 const state = {
   manifest: null,
@@ -31,9 +47,14 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-function buildMapFromManifest(manifest) {
+/* If SET=fema, we can filter by method for the TOP viewer */
+function buildMapFromManifest(manifest, methodFilter=null) {
   const map = {};
   for (const s of (manifest.studies || [])) {
+    if (methodFilter) {
+      const m = (s.method || "").toLowerCase();
+      if (m !== methodFilter) continue;
+    }
     if (!map[s.storm_type]) map[s.storm_type] = {};
     map[s.storm_type][s.outcome] = s.slug;
   }
@@ -43,7 +64,7 @@ function buildMapFromManifest(manifest) {
 async function loadManifest() {
   const j = await fetchJSON(paths.manifest);
   state.manifest = j;
-  state.map = buildMapFromManifest(j);
+  state.map = buildMapFromManifest(j, (SET === "fema" ? METHOD : null));
 
   const sel = document.getElementById("storm-select");
   sel.innerHTML = "";
@@ -67,7 +88,10 @@ async function loadManifest() {
     sel.appendChild(opt);
   }
 
-  const defaultST = stormTypes.includes("hurricane") ? "hurricane" : stormTypes[0];
+  const defaultST =
+    (STORM && stormTypes.includes(STORM)) ? STORM :
+    (stormTypes.includes("hurricane") ? "hurricane" : stormTypes[0]);
+
   sel.value = defaultST;
   return defaultST;
 }
@@ -130,7 +154,7 @@ const referenceLinesPlugin = {
     ctx.setLineDash([6, 4]);
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
 
-    // horizontal dashed zero line (draw even if outside y-range; it will clip)
+    // horizontal dashed zero line
     const yZero = y.getPixelForValue(0);
     ctx.beginPath();
     ctx.moveTo(area.left, yZero);
@@ -209,7 +233,7 @@ function drawChart(canvasId, data) {
             title: (items)=> `k = ${items[0].label}`
           }
         },
-        referenceLines: {} // plugin has no required options now
+        referenceLines: {}
       }
     }
   });
@@ -320,3 +344,149 @@ boot().catch(err => {
   alert("Error: " + err.message);
   console.error(err);
 });
+
+/* ========================= FEMA SECTION =========================
+   FEMA results (second pair) with its own method/cohort controls.
+   Fixes slug naming to match your files:
+   - FEMA cohort:  fema_{method}_hurricane_{outcome}.json
+   - No-FEMA:      fema_{method}_nofema_hurricane_{outcome}.json
+*/
+const femaPaths = {
+  es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
+  did: (slug) => `../data_fema/processed/did/${slug}.json`,
+};
+
+// Keep separate chart refs for FEMA
+state.femaCharts = { evict: null, filing: null };
+
+// Build slug names from method + cohort + outcome
+function femaSlug(method, cohort, outcome) {
+  // FEMA cohort does NOT include "fema" in filename
+  if (cohort === "nofema") {
+    return `fema_${method}_nofema_hurricane_${outcome}`;
+  }
+  return `fema_${method}_hurricane_${outcome}`;
+}
+
+// Write DiD numbers into the FEMA cards
+function showDidInto(prefixBase, did) {
+  const q = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const m = did?.meta || {};
+  q(`${prefixBase}-term`, did?.term ?? "—");
+  q(`${prefixBase}-est`,  fmt.num(did?.estimate));
+  q(`${prefixBase}-se`,   fmt.num(did?.se));
+  q(`${prefixBase}-t`,    fmt.num(did?.t));
+  q(`${prefixBase}-p`,    fmt.p(did?.p));
+  q(`${prefixBase}-ci`,   fmt.ci(did?.ci_low, did?.ci_high));
+  q(`${prefixBase}-dep`,  m.dep_var ?? "—");
+  q(`${prefixBase}-fe`,   m.fixed_effects ?? "—");
+  q(`${prefixBase}-obs`,  m.observations ?? "—");
+  q(`${prefixBase}-rmse`, m.rmse ?? "—");
+  q(`${prefixBase}-r2`,   m.r2 ?? "—");
+}
+
+// Load one FEMA chart + DiD
+async function loadFemaOne(method, cohort, outcome, opt) {
+  const { canvasId, captionId, missingId, chartKey, didPrefixBase } = opt;
+
+  // destroy existing chart on this canvas if any
+  const existing = state.femaCharts[chartKey];
+  if (existing && existing.canvas && existing.canvas.id === canvasId) {
+    existing.destroy();
+    state.femaCharts[chartKey] = null;
+  }
+
+  const slug = femaSlug(method, cohort, outcome);
+  const missingEl = document.getElementById(missingId);
+  const capEl     = document.getElementById(captionId);
+
+  try {
+    const es = await fetchJSON(femaPaths.es(slug));
+    const data = prepareChartData(es);
+    const chart = drawChart(canvasId, data);
+    state.femaCharts[chartKey] = chart;
+    if (missingEl) missingEl.style.display = "none";
+    if (capEl) capEl.textContent = "Ref line drawn midway between k = −2 and k = 0";
+
+    // Try DiD
+    try {
+      const did = await fetchJSON(femaPaths.did(slug));
+      showDidInto(didPrefixBase, did);
+    } catch {
+      showDidInto(didPrefixBase, {});
+    }
+  } catch (e) {
+    console.error(e);
+    if (missingEl) missingEl.style.display = "block";
+    if (capEl) capEl.textContent = "Ref line drawn midway between k = −2 and k = 0";
+    showDidInto(didPrefixBase, {});
+  }
+}
+
+// Load the FEMA pair (Evictions + Filings)
+async function loadFemaPair() {
+  const methodSel = document.getElementById("fema-method-select");
+  const cohortSel = document.getElementById("fema-cohort-select");
+  if (!methodSel || !cohortSel) return; // FEMA section not on page
+
+  const method = methodSel.value;        // "history" | "psm"
+  const cohort = cohortSel.value;        // "fema" | "nofema"
+
+  await Promise.all([
+    loadFemaOne(method, cohort, "evict", {
+      canvasId: "esFemaEvict",
+      captionId: "fema-caption-evict",
+      missingId: "fema-missing-evict",
+      chartKey: "evict",
+      didPrefixBase: "fema-e"
+    }),
+    loadFemaOne(method, cohort, "filing", {
+      canvasId: "esFemaFiling",
+      captionId: "fema-caption-filing",
+      missingId: "fema-missing-filing",
+      chartKey: "filing",
+      didPrefixBase: "fema-f"
+    })
+  ]);
+}
+
+// Initialize FEMA UI (called after the main boot has run)
+function bootFema() {
+  const methodSel = document.getElementById("fema-method-select");
+  const cohortSel = document.getElementById("fema-cohort-select");
+  const refreshBtn = document.getElementById("fema-btn-refresh");
+  const saveE = document.getElementById("fema-save-evict");
+  const saveF = document.getElementById("fema-save-filing");
+
+  if (!methodSel || !cohortSel) return; // FEMA section not present
+
+  // Initial load
+  loadFemaPair();
+
+  // Change handlers
+  methodSel.addEventListener("change", loadFemaPair);
+  cohortSel.addEventListener("change", loadFemaPair);
+  if (refreshBtn) refreshBtn.addEventListener("click", loadFemaPair);
+
+  // Save PNG buttons
+  if (saveE) saveE.addEventListener("click", () => {
+    const ch = state.femaCharts.evict;
+    if (!ch) return;
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = "event-study_FEMA_evictions.png";
+    a.click();
+  });
+  if (saveF) saveF.addEventListener("click", () => {
+    const ch = state.femaCharts.filing;
+    if (!ch) return;
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = "event-study_FEMA_filings.png";
+    a.click();
+  });
+}
+
+// Run FEMA boot (after main boot is scheduled)
+bootFema();
+/* ======================= END FEMA SECTION ======================= */

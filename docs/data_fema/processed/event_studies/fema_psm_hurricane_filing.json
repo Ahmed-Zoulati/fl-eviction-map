@@ -1,0 +1,16 @@
+{
+  "reference_period": -1,
+  "series": [
+    { "k": -5, "estimate": -0.330608, "ci_low": -0.850938, "ci_high": 0.189723 },
+    { "k": -4, "estimate": 0.049419,  "ci_low": -0.365081, "ci_high": 0.463919 },
+    { "k": -3, "estimate": 0.084799,  "ci_low": -0.397703, "ci_high": 0.567301 },
+    { "k": -2, "estimate": 0.061264,  "ci_low": -0.33218,  "ci_high": 0.454708 },
+    { "k":  0, "estimate": -0.363914, "ci_low": -0.817531, "ci_high": 0.089703 },
+    { "k":  1, "estimate": -0.168471, "ci_low": -1.077274, "ci_high": 0.740332 },
+    { "k":  2, "estimate": 0.076116,  "ci_low": -0.58616,  "ci_high": 0.738393 },
+    { "k":  3, "estimate": -0.108484, "ci_low": -0.68268,  "ci_high": 0.465713 },
+    { "k":  4, "estimate": 0.570147,  "ci_low": 0.067498,  "ci_high": 1.072795 },
+    { "k":  5, "estimate": 0.276678,  "ci_low": -0.183656, "ci_high": 0.737012 },
+    { "k":  6, "estimate": -0.008702, "ci_low": -0.518333, "ci_high": 0.500929 }
+  ]
+}

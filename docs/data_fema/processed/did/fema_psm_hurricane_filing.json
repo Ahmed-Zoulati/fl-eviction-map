@@ -1,0 +1,16 @@
+{
+  "term": "Group:Post",
+  "estimate": 0.054,
+  "se": 0.145,
+  "t": 0.372,
+  "p": 0.710,
+  "ci_low": -0.230,
+  "ci_high": 0.338,
+  "meta": {
+    "dep_var": "weighted_filing",
+    "fixed_effects": "Hurricane_ZIP+Hurricane_event",
+    "observations": 14610,
+    "rmse": 1.857,
+    "r2": 0.672
+  }
+}
