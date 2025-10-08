@@ -309,59 +309,97 @@ boot().catch(err => {
    Slugs:
    - FEMA cohort:  fema_{method}_hurricane_{outcome}.json
    - No-FEMA:      fema_{method}_nofema_hurricane_{outcome}.json
+   This section auto-detects whether data_fema is at:
+     - event-study/data_fema/...   (docs/event-study/data_fema)
+     - or ../data_fema/...         (docs/data_fema)
 */
-const femaPaths = {
-  es:  (slug) => `data_fema/processed/event_studies/${slug}.json?v=gh`,
-  did: (slug) => `data_fema/processed/did/${slug}.json?v=gh`,
-};
+let FEMA_PREFIX = "data_fema";
+let femaPrefixChecked = false;
+
+async function ensureFemaPrefix() {
+  if (femaPrefixChecked) return FEMA_PREFIX;
+
+  async function exists(prefix) {
+    try {
+      const r = await fetch(`${prefix}/processed/index.json?v=gh`, { cache: "no-cache" });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  if (await exists("data_fema")) {
+    FEMA_PREFIX = "data_fema";
+  } else if (await exists("../data_fema")) {
+    FEMA_PREFIX = "../data_fema";
+  } else {
+    console.warn("Could not find data_fema at data_fema/ or ../data_fema/");
+  }
+
+  femaPrefixChecked = true;
+  return FEMA_PREFIX;
+}
+
+function femaUrl(kind, slug) {
+  // kind: "event_studies" | "did"
+  return `${FEMA_PREFIX}/processed/${kind}/${slug}.json?v=gh`;
+}
 
 // Keep separate chart refs for FEMA
 state.femaCharts = { evict: null, filing: null };
 
+// Slug builder
 function femaSlug(method, cohort, outcome) {
+  // FEMA cohort does not include "fema" in the filename
   if (cohort === "nofema") return `fema_${method}_nofema_hurricane_${outcome}`;
   return `fema_${method}_hurricane_${outcome}`;
 }
 
+// Write DiD numbers into the FEMA cards
 function showDidInto(prefixBase, did) {
-  const q = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const m = did?.meta || {};
-  q(`${prefixBase}-term`, did?.term ?? "—");
-  q(`${prefixBase}-est`,  fmt.num(did?.estimate));
-  q(`${prefixBase}-se`,   fmt.num(did?.se));
-  q(`${prefixBase}-t`,    fmt.num(did?.t));
-  q(`${prefixBase}-p`,    fmt.p(did?.p));
-  q(`${prefixBase}-ci`,   fmt.ci(did?.ci_low, did?.ci_high));
-  q(`${prefixBase}-dep`,  m.dep_var ?? "—");
-  q(`${prefixBase}-fe`,   m.fixed_effects ?? "—");
-  q(`${prefixBase}-obs`,  m.observations ?? "—");
-  q(`${prefixBase}-rmse`, m.rmse ?? "—");
-  q(`${prefixBase}-r2`,   m.r2 ?? "—");
+  set(`${prefixBase}-term`, did?.term ?? "—");
+  set(`${prefixBase}-est`,  fmt.num(did?.estimate));
+  set(`${prefixBase}-se`,   fmt.num(did?.se));
+  set(`${prefixBase}-t`,    fmt.num(did?.t));
+  set(`${prefixBase}-p`,    fmt.p(did?.p));
+  set(`${prefixBase}-ci`,   fmt.ci(did?.ci_low, did?.ci_high));
+  set(`${prefixBase}-dep`,  m.dep_var ?? "—");
+  set(`${prefixBase}-fe`,   m.fixed_effects ?? "—");
+  set(`${prefixBase}-obs`,  m.observations ?? "—");
+  set(`${prefixBase}-rmse`, m.rmse ?? "—");
+  set(`${prefixBase}-r2`,   m.r2 ?? "—");
 }
 
+// Load one FEMA chart + DiD
 async function loadFemaOne(method, cohort, outcome, opt) {
   const { canvasId, captionId, missingId, chartKey, didPrefixBase } = opt;
 
+  // destroy existing chart on this canvas if any
   const existing = state.femaCharts[chartKey];
   if (existing && existing.canvas && existing.canvas.id === canvasId) {
     existing.destroy();
     state.femaCharts[chartKey] = null;
   }
 
+  await ensureFemaPrefix();
+
   const slug = femaSlug(method, cohort, outcome);
   const missingEl = document.getElementById(missingId);
   const capEl     = document.getElementById(captionId);
 
   try {
-    const es = await fetchJSON(femaPaths.es(slug));
+    const es = await fetchJSON(femaUrl("event_studies", slug));
     const data = prepareChartData(es);
     const chart = drawChart(canvasId, data);
     state.femaCharts[chartKey] = chart;
     if (missingEl) missingEl.style.display = "none";
     if (capEl) capEl.textContent = "Ref line drawn midway between k = −2 and k = 0";
 
+    // Try DiD
     try {
-      const did = await fetchJSON(femaPaths.did(slug));
+      const did = await fetchJSON(femaUrl("did", slug));
       showDidInto(didPrefixBase, did);
     } catch {
       showDidInto(didPrefixBase, {});
@@ -374,10 +412,11 @@ async function loadFemaOne(method, cohort, outcome, opt) {
   }
 }
 
+// Load the FEMA pair (Evictions + Filings)
 async function loadFemaPair() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
-  if (!methodSel || !cohortSel) return;
+  if (!methodSel || !cohortSel) return; // FEMA section not on page
 
   const method = methodSel.value;        // "history" | "psm"
   const cohort = cohortSel.value;        // "fema" | "nofema"
@@ -400,6 +439,7 @@ async function loadFemaPair() {
   ]);
 }
 
+// Initialize FEMA UI (called after the main boot has run)
 function bootFema() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
@@ -407,23 +447,36 @@ function bootFema() {
   const saveE = document.getElementById("fema-save-evict");
   const saveF = document.getElementById("fema-save-filing");
 
-  if (!methodSel || !cohortSel) return;
+  if (!methodSel || !cohortSel) return; // FEMA section not present
 
+  // Initial load
   loadFemaPair();
 
+  // Change handlers
   methodSel.addEventListener("change", loadFemaPair);
   cohortSel.addEventListener("change", loadFemaPair);
   if (refreshBtn) refreshBtn.addEventListener("click", loadFemaPair);
 
+  // Save PNG buttons
   if (saveE) saveE.addEventListener("click", () => {
-    const ch = state.femaCharts.evict; if (!ch) return;
-    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_FEMA_evictions.png"; a.click();
+    const ch = state.femaCharts.evict;
+    if (!ch) return;
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = "event-study_FEMA_evictions.png";
+    a.click();
   });
   if (saveF) saveF.addEventListener("click", () => {
-    const ch = state.femaCharts.filing; if (!ch) return;
-    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_FEMA_filings.png"; a.click();
+    const ch = state.femaCharts.filing;
+    if (!ch) return;
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = "event-study_FEMA_filings.png";
+    a.click();
   });
 }
 
+// Run FEMA boot (after main boot is scheduled)
 bootFema();
 /* ======================= END FEMA SECTION ======================= */
+
