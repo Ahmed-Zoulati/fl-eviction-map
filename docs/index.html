@@ -9,6 +9,12 @@
     <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
     <link rel="stylesheet" href="./style.css" />
   </head>
+  <style>
+    /* Fallback to guarantee the map is visible even if style.css fails to load */
+    html, body, #map { height: 100%; margin: 0; }
+    #map { width: 100%; position: absolute; top: 0; left: 0; }
+  </style>
+
   <body>
     <div id="map"></div>
 
@@ -108,12 +114,13 @@
 
     <script>
       // ================== CONFIG (GitHub Pages) ==================
-      const GEOJSON_URL     = "data/fl_zip_evictions.min.geojson?v=gh";
-      const STORM_CONES_URL = "storms/storm_cones.min.geojson?v=gh";
-      const WORLD_LAND_URL  = "base/world_land_110m.min.geojson?v=gh";
+      const GEOJSON_URL      = "data/fl_zip_evictions.min.geojson?v=gh";
+      const STORM_CONES_URL  = "storms/storm_cones.min.geojson?v=gh";
+      const WORLD_LAND_URL   = "base/world_land_110m.min.geojson?v=gh"; // <-- make sure this file exists
       console.log("Using GEOJSON_URL (docs):", GEOJSON_URL);
       console.log("Using STORM_CONES_URL (docs):", STORM_CONES_URL);
       console.log("Using WORLD_LAND_URL (docs):", WORLD_LAND_URL);
+
 
       // ================== HELPERS ==================
       function currentYear() { return parseInt(document.getElementById("yearRange").value, 10); }
