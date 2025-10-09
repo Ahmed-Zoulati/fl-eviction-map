@@ -16,8 +16,8 @@
       <!-- Year slider -->
       <div class="row">
         <label for="yearRange">Year:</label>
-        <input id="yearRange" type="range" min="2004" max="2016" step="1" value="2016" />
-        <span id="yearValue">2016</span>
+        <input id="yearRange" type="range" min="2004" max="2016" step="1" value="2004" />
+        <span id="yearValue">2004</span>
       </div>
 
       <!-- Circles metric -->
@@ -69,7 +69,7 @@
         </div>
       </div>
 
-      <!-- Per-storm controls (JS populates; defaults unchecked) -->
+      <!-- Per-storm controls -->
       <div class="legend" style="margin-top:8px;">
         <div><strong>Storms this year</strong></div>
 
@@ -108,10 +108,12 @@
 
     <script>
       // ================== CONFIG (GitHub Pages) ==================
-      const GEOJSON_URL = "data/fl_zip_evictions.min.geojson?v=gh";
+      const GEOJSON_URL     = "data/fl_zip_evictions.min.geojson?v=gh";
       const STORM_CONES_URL = "storms/storm_cones.min.geojson?v=gh";
+      const WORLD_LAND_URL  = "base/world_land_110m.min.geojson?v=gh";
       console.log("Using GEOJSON_URL (docs):", GEOJSON_URL);
       console.log("Using STORM_CONES_URL (docs):", STORM_CONES_URL);
+      console.log("Using WORLD_LAND_URL (docs):", WORLD_LAND_URL);
 
       // ================== HELPERS ==================
       function currentYear() { return parseInt(document.getElementById("yearRange").value, 10); }
@@ -209,14 +211,14 @@
             "zips": { "type": "geojson", "data": GEOJSON_URL }
           },
           "layers": [
-            { "id": "bg", "type": "background", "paint": { "background-color": "#f8f9fb" } }
+            { "id": "bg", "type": "background", "paint": { "background-color": "rgba(191,227,255,0.35)" } }
           ]
         },
         center: [-82.56, 27.82],
         zoom: 6.5
       });
 
-      // Build per-year storm index
+      // Build per-year storm index (then render list; map layers will be set on load)
       fetch(STORM_CONES_URL).then(r => r.json()).then(gc => {
         stormsByYear.clear();
         for (const f of gc.features || []) {
@@ -231,8 +233,8 @@
           stormsByYear.set(year, arr);
         }
         for (const [y, arr] of stormsByYear.entries()) arr.sort((a,b)=> a.name.localeCompare(b.name));
-        selectedStormKeys.clear();        // default unchecked
-        renderStormList(currentYear());   // draw for the current year
+        selectedStormKeys.clear();
+        renderStormList(currentYear());
       });
 
       // Toggle outlines + cones visibility together
@@ -260,12 +262,18 @@
         if (map.getLayer("cone-ts-outline"))   map.setFilter("cone-ts-outline",   filterT);
       }
 
-      // Render the per-storm checkbox list for a given year (unchecked by default)
+      // Render per-storm checkbox list; if nothing selected for this year yet → select all by default
       function renderStormList(year) {
         const storms = stormsByYear.get(year) || [];
         stormListDiv.innerHTML = "";
         stormListEmpty.style.display = storms.length ? "none" : "block";
         if (!storms.length) return;
+
+        const hasAnyForYear = storms.some(s => selectedStormKeys.has(s.key));
+        if (!hasAnyForYear) {
+          storms.forEach(s => selectedStormKeys.add(s.key)); // default = all selected
+        }
+
         for (const s of storms) {
           const id = `storm_${s.key}`;
           const label = document.createElement("label");
@@ -278,19 +286,32 @@
           cb.type = "checkbox";
           cb.id = id;
           cb.value = s.key;
-          cb.checked = selectedStormKeys.has(s.key); // defaults false
+          cb.checked = selectedStormKeys.has(s.key);
 
-          const txt = document.createTextNode(` ${s.name} (${s.year})`);
+          cb.addEventListener("change", () => {
+            if (cb.checked) selectedStormKeys.add(s.key);
+            else selectedStormKeys.delete(s.key);
+            applyConeFilters();
+          });
+
           label.appendChild(cb);
-          label.appendChild(txt);
+          label.appendChild(document.createTextNode(` ${s.name} (${s.year})`));
           stormListDiv.appendChild(label);
         }
+
+        // reflect current selection on map (once layers exist)
+        applyConeFilters();
       }
 
       // ZIP bounds cache for search
       let zipBoundsMap = new Map();
 
       map.on("load", () => {
+        // --- Simple world basemap: land polygons over soft blue ocean ---
+        map.addSource("worldland", { type: "geojson", data: WORLD_LAND_URL });
+        map.addLayer({ id: "world-land-fill", type: "fill", source: "worldland", paint: { "fill-color": "#f8fafc" } });
+        map.addLayer({ id: "world-land-outline", type: "line", source: "worldland", paint: { "line-color": "#94a3b8", "line-width": 0.5 } });
+
         // ZIP fill + outline
         map.addLayer({
           "id": "zips-fill",
@@ -307,7 +328,7 @@
           "filter": yearFilterExpr(currentYear())
         });
 
-        // ---- Storm CONES source + layers (start with no storms selected) ----
+        // ---- Storm CONES (start with empty selection, then apply) ----
         map.addSource("stormCones", { type: "geojson", data: STORM_CONES_URL });
         const noneKeys = ["literal", []];
         const keyExpr = ["concat", ["get","name"], "-", ["to-string", ["get","year"]]];
@@ -422,7 +443,7 @@
           map.setLayoutProperty("zip-circles", "visibility", (circleToggle.checked ? "visible" : "none"));
         });
 
-        // Respect outline/toggle state on load; cones start hidden until boxes checked
+        // Respect outline toggles and apply current per-storm selection
         applyStormVis();
         applyConeFilters();
       });
@@ -474,29 +495,22 @@
         if (map.getLayer("zip-circles"))  map.setFilter("zip-circles", yf);
         if (map.getLayer("storm-hurr"))   map.setFilter("storm-hurr", ["all", yf, ["==", ["get", "treated_hurr"], 1]]);
         if (map.getLayer("storm-ts"))     map.setFilter("storm-ts",   ["all", yf, ["==", ["get", "treated_ts"], 1]]);
-        // Rebuild per-storm list for new year (default unchecked)
+        // Rebuild per-storm list for new year (auto-select all)
         selectedStormKeys.clear();
         renderStormList(currentYear());
         applyConeFilters();
       });
 
       // ZIP search & reset
-      zipGo.addEventListener('click', () => {
+      const zipGoBtn = document.getElementById('zipGo');
+      zipGoBtn.addEventListener('click', () => {
         const zip = normZip(zipInput.value);
         const b = zipBoundsMap.get(zip);
         if (!zip || !b) { alert('ZIP not found. Try a 5-digit Florida ZIP (e.g., 33139).'); return; }
         map.fitBounds(b, { padding: 20, duration: 500 });
       });
-      zipInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') zipGo.click(); });
+      zipInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') zipGoBtn.click(); });
       resetBtn.addEventListener('click', () => { map.flyTo({ center: [-82.56, 27.82], zoom: 6.5, essential: true }); });
-
-      // Fancy hover for Event-study button
-      (function(){
-        const b = document.getElementById('eventStudyBtn');
-        b.style.transition = 'transform 120ms ease';
-        b.addEventListener('mouseenter', ()=> b.style.transform='scale(1.06)');
-        b.addEventListener('mouseleave', ()=> b.style.transform='scale(1)');
-      })();
     </script>
   </body>
 </html>
