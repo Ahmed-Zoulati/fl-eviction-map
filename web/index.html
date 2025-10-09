@@ -16,8 +16,8 @@
       <!-- Year slider -->
       <div class="row">
         <label for="yearRange">Year:</label>
-        <input id="yearRange" type="range" min="2004" max="2016" step="1" value="2016" />
-        <span id="yearValue">2016</span>
+        <input id="yearRange" type="range" min="2004" max="2016" step="1" value="2004" />
+        <span id="yearValue">2004</span>
       </div>
 
       <!-- Circles metric -->
@@ -103,6 +103,7 @@
       const STORM_CONES_URL = "../docs/storms/storm_cones.min.geojson?v=local";
       console.log("Using GEOJSON_URL (web):", GEOJSON_URL);
       console.log("Using STORM_CONES_URL (web):", STORM_CONES_URL);
+      const WORLD_LAND_URL = "../docs/base/world_land_110m.min.geojson?v=local";
 
       // ================== HELPERS ==================
       function currentYear() { return parseInt(document.getElementById("yearRange").value, 10); }
@@ -198,7 +199,7 @@
             "zips": { "type": "geojson", "data": GEOJSON_URL }
           },
           "layers": [
-            { "id": "bg", "type": "background", "paint": { "background-color": "#f8f9fb" } }
+            { "id": "bg", "type": "background", "paint": { "background-color": "#bfe3ff" } }
           ]
         },
         center: [-82.56, 27.82],
@@ -259,6 +260,13 @@
         stormListDiv.innerHTML = "";
         stormListEmpty.style.display = storms.length ? "none" : "block";
         if (!storms.length) return;
+
+        // If nothing selected for THIS year yet → select all by default
+        const hasAnyForYear = storms.some(s => selectedStormKeys.has(s.key));
+        if (!hasAnyForYear) {
+          storms.forEach(s => selectedStormKeys.add(s.key));
+        }
+
         for (const s of storms) {
           const id = `storm_${s.key}`;
           const label = document.createElement("label");
@@ -271,16 +279,53 @@
           cb.type = "checkbox";
           cb.id = id;
           cb.value = s.key;
-          cb.checked = selectedStormKeys.has(s.key); // defaults false (unchecked)
+          cb.checked = selectedStormKeys.has(s.key);
 
-          const txt = document.createTextNode(` ${s.name} (${s.year})`);
+          // update selection + map when user toggles a box
+          cb.addEventListener("change", () => {
+            if (cb.checked) selectedStormKeys.add(s.key);
+            else selectedStormKeys.delete(s.key);
+            applyConeFilters();
+          });
+
           label.appendChild(cb);
-          label.appendChild(txt);
+          label.appendChild(document.createTextNode(` ${s.name} (${s.year})`));
           stormListDiv.appendChild(label);
         }
+
+        // make sure map respects the (possibly new) selection
+        applyConeFilters();
       }
 
       map.on("load", () => {
+
+        // Optional: log if the land file is missing
+        fetch(WORLD_LAND_URL, {cache:"no-cache"}).then(r => {
+          if (!r.ok) console.warn("WORLD_LAND_URL not found:", WORLD_LAND_URL);
+        }).catch(() => console.warn("WORLD_LAND_URL not reachable:", WORLD_LAND_URL));
+
+
+        // --- World basemap: continents only ---
+        map.addSource("worldland", { type: "geojson", data: WORLD_LAND_URL });
+
+        // pale land fill
+        map.addLayer({
+          id: "world-land-fill",
+          type: "fill",
+          source: "worldland",
+          paint: { "fill-color": "#f8fafc" }   // light grey-white land
+        });
+
+        // thin coastline outline
+        map.addLayer({
+          id: "world-land-outline",
+          type: "line",
+          source: "worldland",
+          paint: { "line-color": "#94a3b8", "line-width": 0.5 }
+        });
+
+
+
         // ZIP fill + outline
         map.addLayer({
           "id": "zips-fill",

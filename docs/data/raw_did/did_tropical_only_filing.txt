@@ -1,0 +1,13 @@
+###
+
+Estimation:  OLS
+Dep. var.: weighted_filing, Fixed effects: Hurricane_ZIP+Hurricane_event
+Inference:  CRV1
+Observations:  57855
+
+| Coefficient   |   Estimate |   Std. Error |   t value |   Pr(>|t|) |   2.5% |   97.5% |
+|:--------------|-----------:|-------------:|----------:|-----------:|-------:|--------:|
+| Group:Post    |     -0.063 |        0.097 |    -0.645 |      0.519 | -0.254 |   0.128 |
+---
+RMSE: 1.698 R2: 0.703 R2 Within: 0.0 
+None

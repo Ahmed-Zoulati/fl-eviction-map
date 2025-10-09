@@ -1,0 +1,20 @@
+{
+  "term": "Group:Post",
+  "estimate": 0.157,
+  "se": 0.109,
+  "t": 1.445,
+  "p": 0.149,
+  "ci_low": -0.056,
+  "ci_high": 0.371,
+  "meta": {
+    "dep_var": "weighted_filing",
+    "fixed_effects": "Hurricane_ZIP+Hurricane_event",
+    "observations": 23199,
+    "rmse": 1.845,
+    "r2": 0.683
+  },
+  "study_name": "hurricane_only_filing",
+  "label": "Hurricane \u2014 Filings",
+  "storm_type": "hurricane",
+  "outcome": "filing"
+}

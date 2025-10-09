@@ -1,40 +1,62 @@
-/* Two charts side-by-side (Evictions + Filings) for a chosen storm type.
-   - Populates storm-type dropdown from manifest
-   - Loads the ES & DiD for both outcomes
-   - Draws vertical dashed ref line at midpoint between k=-2 and k=0 (≈ -1) and horizontal dashed zero line
-*/
+/* Evictions & Payday event-study viewer (core + FEMA). */
 
-/* ================== DATASET SWITCH (top viewer) ==================
-   Default = CORE dataset (data/processed/...).
-   You can optionally load FEMA into the TOP viewer via URL params:
-     ?set=fema&method=history&storm=hurricane
-   The FEMA section below (second pair) still uses its own controls.
-*/
 const q = new URLSearchParams(location.search);
-const SET    = (q.get("set") || "core").toLowerCase();      // "core" | "fema"
-const METHOD = (q.get("method") || "").toLowerCase();       // "history" | "psm" (when SET=fema)
-const STORM  = (q.get("storm")  || "").toLowerCase();       // e.g. "hurricane" (optional)
+const SET    = (q.get("set") || "core").toLowerCase();      // "core" | "fema" (legacy)
+const METHOD = (q.get("method") || "").toLowerCase();       // "history" | "psm" (legacy+FEMA)
+const STORM  = (q.get("storm")  || "").toLowerCase();       // "hurricane" | "tropical" | "both" (optional)
 
-/* Build paths for the TOP viewer (GH Pages-friendly: no "../") */
-const paths = (SET === "fema")
-  ? {
-      manifest: "data_fema/processed/index.json?v=gh",
-      es:  (slug) => `data_fema/processed/event_studies/${slug}.json?v=gh`,
-      did: (slug) => `data_fema/processed/did/${slug}.json?v=gh`,
+// === Dataset switch (top viewer) ===
+let DATASET = "evictions"; // updated by <select id="dataset-select">
+
+function outcomeKeysFor(dataset) {
+  return (dataset === "payday")
+    ? ["transaction_volume", "default"]
+    : ["evict", "filing"];
+}
+function labelsFor(dataset) {
+  return (dataset === "payday")
+    ? { left: "Transaction Volume", right: "Default", unit: "weeks" }
+    : { left: "Evictions",          right: "Filings", unit: "months" };
+}
+
+// === Paths for the TOP viewer ===
+function getCorePaths() {
+  // Legacy: allow top viewer to point at FEMA via URL (?set=fema)
+  if (SET === "fema") {
+    if (DATASET === "payday") {
+      return {
+        manifest: "../data_payday_fema/processed/index.json",
+        es:  (slug) => `../data_payday_fema/processed/event_studies/${slug}.json`,
+        did: (slug) => `../data_payday_fema/processed/did/${slug}.json`,
+      };
     }
-  : {
-      manifest: "data/processed/index.json?v=gh",
-      es:  (slug) => `data/processed/event_studies/${slug}.json?v=gh`,
-      did: (slug) => `data/processed/did/${slug}.json?v=gh`,
+    return {
+      manifest: "../data_fema/processed/index.json",
+      es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
+      did: (slug) => `../data_fema/processed/did/${slug}.json`,
     };
+  }
+  // Default: core (non-FEMA)
+  if (DATASET === "payday") {
+    return {
+      manifest: "../data_payday/processed/index.json",
+      es:  (slug) => `../data_payday/processed/event_studies/${slug}.json`,
+      did: (slug) => `../data_payday/processed/did/${slug}.json`,
+    };
+  }
+  return {
+    manifest: "../data/processed/index.json",
+    es:  (slug) => `../data/processed/event_studies/${slug}.json`,
+    did: (slug) => `../data/processed/did/${slug}.json`,
+  };
+}
 
 const state = {
   manifest: null,
-  charts: { evict: null, filing: null },
-  map: {} // {storm_type: {evict: slug, filing: slug}}
+  charts: { evict: null, filing: null },   // left/right
+  map: {}                                   // {storm_type: {outcome: slug}}
 };
 
-// Formatting helpers
 const fmt = {
   num: (x, d=3) => (x==null || isNaN(x) ? "—" : (+x).toFixed(d)),
   p: (x) => (x==null || isNaN(x) ? "—" : (+x).toFixed(3)),
@@ -47,7 +69,6 @@ async function fetchJSON(url) {
   return r.json();
 }
 
-/* If SET=fema, filter by method for the TOP viewer (only when valid) */
 function buildMapFromManifest(manifest, methodFilter=null) {
   const map = {};
   for (const s of (manifest.studies || [])) {
@@ -62,26 +83,21 @@ function buildMapFromManifest(manifest, methodFilter=null) {
 }
 
 async function loadManifest() {
+  const paths = getCorePaths();
   const j = await fetchJSON(paths.manifest);
-  const validMethod = (METHOD === "history" || METHOD === "psm") ? METHOD : null;
   state.manifest = j;
-  state.map = buildMapFromManifest(j, (SET === "fema" ? validMethod : null));
+  state.map = buildMapFromManifest(j, (SET === "fema" ? METHOD : null));
 
   const sel = document.getElementById("storm-select");
   sel.innerHTML = "";
 
-  const labelFor = {
-    hurricane: "Hurricane",
-    tropical: "Tropical Storm",
-    both: "Hurricane + Tropical"
-  };
+  const labelFor = { hurricane: "Hurricane", tropical: "Tropical Storm", both: "Hurricane + Tropical" };
 
   const stormTypes = Object.keys(state.map);
   if (stormTypes.length === 0) {
     sel.innerHTML = `<option value="">No studies found</option>`;
     return;
   }
-
   for (const st of stormTypes) {
     const opt = document.createElement("option");
     opt.value = st;
@@ -102,86 +118,46 @@ function prepareChartData(es) {
   const est = es.series.map(r => r.estimate ?? null);
   const ciL = es.series.map(r => r.ci_low ?? null);
   const ciH = es.series.map(r => r.ci_high ?? null);
-  return { labels, est, ciL, ciH, ref: es.reference_period ?? -1 };
+  const unit = es.time_unit || labelsFor(DATASET).unit;
+  return { labels, est, ciL, ciH, ref: es.reference_period ?? -1, unit };
 }
 
-/* ---- Plugin: zero line + ref line at midpoint between k=-2 and k=0 ---- */
+/* ---- plugin: zero line + ref line ---- */
 const referenceLinesPlugin = {
   id: 'referenceLines',
-  afterDatasetsDraw(chart, _args, opts) {
+  afterDatasetsDraw(chart) {
     const area = chart.chartArea;
     if (!area) return;
-
-    const x = chart.scales.x; // category scale
-    const y = chart.scales.y; // linear scale
-    const ctx = chart.ctx;
-    const labels = chart.data.labels;
-
-    const xForK = (kVal) => {
-      const idx = labels.indexOf(kVal);
-      if (idx === -1) return null;
-      return x.getPixelForTick(idx);
-    };
-
-    const idxLeft = (() => {
-      let best = -1;
-      for (let i = 0; i < labels.length; i++) if (+labels[i] < 0) best = i;
-      return best;
-    })();
-    const idxRight = (() => {
-      for (let i = 0; i < labels.length; i++) if (+labels[i] >= 0) return i;
-      return -1;
-    })();
-
+    const x = chart.scales.x, y = chart.scales.y, ctx = chart.ctx, labels = chart.data.labels;
+    const xForIdx = (i)=> x.getPixelForTick(i);
+    let left = -1, right = -1;
+    for (let i=0;i<labels.length;i++) if (+labels[i] < 0) left = i;
+    for (let i=0;i<labels.length;i++) if (+labels[i] >= 0) { right = i; break; }
     let xRef = null;
-    if (idxLeft !== -1 && idxRight !== -1) {
-      const xLeft = x.getPixelForTick(idxLeft);
-      const xRight = x.getPixelForTick(idxRight);
-      xRef = (xLeft + xRight) / 2;
-    } else {
-      const xNeg2 = xForK(-2);
-      const xZero = xForK(0);
-      if (xNeg2 !== null && xZero !== null) xRef = (xNeg2 + xZero) / 2;
-    }
+    if (left !== -1 && right !== -1) xRef = (xForIdx(left) + xForIdx(right)) / 2;
 
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
-    ctx.clip();
-    ctx.lineWidth = 1;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath(); ctx.rect(area.left, area.top, area.right-area.left, area.bottom-area.top); ctx.clip();
+    ctx.lineWidth = 1; ctx.setLineDash([6,4]); ctx.strokeStyle = 'rgba(0,0,0,0.55)';
 
     const yZero = y.getPixelForValue(0);
-    ctx.beginPath();
-    ctx.moveTo(area.left, yZero);
-    ctx.lineTo(area.right, yZero);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(area.left, yZero); ctx.lineTo(area.right, yZero); ctx.stroke();
 
     if (xRef !== null && isFinite(xRef)) {
-      ctx.beginPath();
-      ctx.moveTo(xRef, area.top);
-      ctx.lineTo(xRef, area.bottom);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xRef, area.top); ctx.lineTo(xRef, area.bottom); ctx.stroke();
     }
-
     ctx.restore();
   }
 };
 Chart.register(referenceLinesPlugin);
-/* ---------------------------------------------------------------------- */
 
-function drawChart(canvasId, data) {
+function drawChart(canvasId, data, titleText) {
   const ctx = document.getElementById(canvasId).getContext("2d");
-
-  // Ensure any existing chart on this canvas is destroyed first
   for (const key of Object.keys(state.charts)) {
     if (state.charts[key] && state.charts[key].canvas && state.charts[key].canvas.id === canvasId) {
-      state.charts[key].destroy();
-      state.charts[key] = null;
+      state.charts[key].destroy(); state.charts[key] = null;
     }
   }
-
   const chart = new Chart(ctx, {
     type: "line",
     data: {
@@ -193,32 +169,31 @@ function drawChart(canvasId, data) {
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       scales: {
-        x: { title: { display: true, text: "Event time (months)" }, grid: { display: false } },
+        x: { title: { display: true, text: `Event time (${data.unit || "months"})` }, grid: { display: false } },
         y: { title: { display: true, text: "Coefficient" } }
       },
       plugins: {
         legend: { display: true },
+        title: { display: true, text: titleText || "" },
         tooltip: { callbacks: { title: (items)=> `k = ${items[0].label}` } },
         referenceLines: {}
       }
     }
   });
-
   return chart;
 }
 
 function showDid(did, prefix) {
-  const q = (id, v)=> document.getElementById(id).textContent = v;
-  q(`did-${prefix}-term`, did.term ?? "—");
-  q(`did-${prefix}-est`, fmt.num(did.estimate));
-  q(`did-${prefix}-se`, fmt.num(did.se));
-  q(`did-${prefix}-t`, fmt.num(did.t));
-  q(`did-${prefix}-p`, fmt.p(did.p));
-  q(`did-${prefix}-ci`, fmt.ci(did.ci_low, did.ci_high));
-  const m = did.meta || {};
+  const q = (id, v)=> { const el = document.getElementById(id); if (el) el.textContent = v; };
+  q(`did-${prefix}-term`, did?.term ?? "—");
+  q(`did-${prefix}-est`, fmt.num(did?.estimate));
+  q(`did-${prefix}-se`, fmt.num(did?.se));
+  q(`did-${prefix}-t`, fmt.num(did?.t));
+  q(`did-${prefix}-p`, fmt.p(did?.p));
+  q(`did-${prefix}-ci`, fmt.ci(did?.ci_low, did?.ci_high));
+  const m = did?.meta || {};
   q(`did-${prefix}-dep`, m.dep_var ?? "—");
   q(`did-${prefix}-fe`, m.fixed_effects ?? "—");
   q(`did-${prefix}-obs`, m.observations ?? "—");
@@ -226,7 +201,55 @@ function showDid(did, prefix) {
   q(`did-${prefix}-r2`, m.r2 ?? "—");
 }
 
-async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey, didPrefix) {
+/* ---------- Heading utilities ---------- */
+function getCohortPrefix() {
+  const cohortSel = document.getElementById("fema-cohort-select");
+  const val = (cohortSel && cohortSel.value) ? cohortSel.value : "fema";
+  return val === "nofema" ? "No-FEMA" : "FEMA";
+}
+
+// Set the visible heading near a canvas.
+// If prefix is provided, it becomes "PREFIX — Label"; otherwise just "Label".
+function setHeadingForCanvas(canvasId, baseLabel, prefix = null) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  const explicit = document.querySelector(`[data-title-for="${canvasId}"]`);
+  const container = explicit
+    ? explicit.closest(".card, .panel, section, .box, .chart-card") || canvas.parentElement
+    : canvas.closest(".card, .panel, section, .box, .chart-card") || canvas.parentElement;
+
+  let heading = explicit || (container && container.querySelector("h1,h2,h3,h4,.card-title,.section-title,.panel-title,strong"));
+  if (!heading && canvas.parentElement) {
+    // try a few previous siblings
+    let p = canvas.parentElement;
+    for (let i = 0; i < 4 && p && !heading; i++) {
+      const prev = p.previousElementSibling;
+      if (!prev) break;
+      heading = prev.matches?.("h1,h2,h3,h4,.card-title,.section-title,.panel-title,strong")
+        ? prev
+        : prev.querySelector?.("h1,h2,h3,h4,.card-title,.section-title,.panel-title,strong");
+      p = prev;
+    }
+  }
+  if (!heading) return;
+
+  heading.textContent = prefix ? `${prefix} — ${baseLabel}` : baseLabel;
+}
+
+function updateOuterHeadings(dataset) {
+  const lbls = labelsFor(dataset);
+  // Top pair (no prefix)
+  setHeadingForCanvas("esChartEvict",  lbls.left,  null);
+  setHeadingForCanvas("esChartFiling", lbls.right, null);
+  // FEMA/No-FEMA pair (with prefix)
+  const prefix = getCohortPrefix();
+  setHeadingForCanvas("esFemaEvict",   lbls.left,  prefix);
+  setHeadingForCanvas("esFemaFiling",  lbls.right, prefix);
+}
+/* --------------------------------------- */
+
+async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey, didPrefix, titleText) {
   const slug = state.map?.[stormType]?.[outcome];
   const missingEl = document.getElementById(missingId);
   const cap = document.getElementById(capId);
@@ -240,12 +263,14 @@ async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey,
   }
 
   try {
+    const paths = getCorePaths();
     const es = await fetchJSON(paths.es(slug));
     const data = prepareChartData(es);
-    const chart = drawChart(canvasId, data);
+    const chart = drawChart(canvasId, data, titleText);
     state.charts[chartKey] = chart;
     if (missingEl) missingEl.style.display = "none";
     if (cap) cap.textContent = "Ref line drawn midway between k = −2 and k = 0";
+
     try {
       const did = await fetchJSON(paths.did(slug));
       showDid(did, didPrefix);
@@ -262,25 +287,75 @@ async function loadOne(stormType, outcome, canvasId, capId, missingId, chartKey,
 }
 
 async function loadPair(stormType) {
+  const [leftKey, rightKey] = outcomeKeysFor(DATASET);
+  const lbls = labelsFor(DATASET);
   await Promise.all([
-    loadOne(stormType, "evict", "esChartEvict", "chart-caption-evict", "missing-evict", "evict", "e"),
-    loadOne(stormType, "filing", "esChartFiling", "chart-caption-filing", "missing-filing", "filing", "f")
+    loadOne(stormType, leftKey,  "esChartEvict",  "chart-caption-evict",  "missing-evict",  "evict",  "e", lbls.left),
+    loadOne(stormType, rightKey, "esChartFiling", "chart-caption-filing", "missing-filing", "filing", "f", lbls.right)
   ]);
+  updateDomTitles(DATASET);
+  bumpChartTitlesToCurrentDataset();
+}
+
+function updateDomTitles(dataset) {
+  const lbls = labelsFor(dataset);
+
+  // Specific IDs (if your HTML has them)
+  const leftIDs  = ["title-evict", "heading-evict", "card-title-evict"];
+  const rightIDs = ["title-filing","heading-filing","card-title-filing"];
+  for (const id of leftIDs)  { const el = document.getElementById(id);  if (el) el.textContent = lbls.left; }
+  for (const id of rightIDs) { const el = document.getElementById(id);  if (el) el.textContent = lbls.right; }
+
+  // Captions under each chart
+  const capE = document.getElementById("chart-caption-evict");
+  const capF = document.getElementById("chart-caption-filing");
+  if (capE) capE.textContent = `${lbls.left} — Ref line drawn midway between k = −2 and k = 0`;
+  if (capF) capF.textContent = `${lbls.right} — Ref line drawn midway between k = −2 and k = 0`;
+
+  // FEMA / No-FEMA captions (dynamic prefix)
+  const prefix = getCohortPrefix();
+  const fcapE = document.getElementById("fema-caption-evict");
+  const fcapF = document.getElementById("fema-caption-filing");
+  if (fcapE) fcapE.textContent = `${prefix} — ${lbls.left} — Ref line drawn midway between k = −2 and k = 0`;
+  if (fcapF) fcapF.textContent = `${prefix} — ${lbls.right} — Ref line drawn midway between k = −2 and k = 0`;
+
+  // Headings above canvases
+  updateOuterHeadings(dataset);
+}
+
+function bumpChartTitlesToCurrentDataset() {
+  const lbls = labelsFor(DATASET);
+  if (state.charts.evict) {
+    state.charts.evict.options.plugins.title.text = lbls.left;
+    state.charts.evict.update("none");
+  }
+  if (state.charts.filing) {
+    state.charts.filing.options.plugins.title.text = lbls.right;
+    state.charts.filing.update("none");
+  }
+  const prefix = getCohortPrefix();
+  if (state.femaCharts?.evict) {
+    state.femaCharts.evict.options.plugins.title.text = `${prefix} — ${lbls.left}`;
+    state.femaCharts.evict.update("none");
+  }
+  if (state.femaCharts?.filing) {
+    state.femaCharts.filing.options.plugins.title.text = `${prefix} — ${lbls.right}`;
+    state.femaCharts.filing.update("none");
+  }
 }
 
 async function boot() {
   const defaultST = await loadManifest();
   const sel = document.getElementById("storm-select");
 
-  if (sel.value) {
-    await loadPair(sel.value);
-  } else if (defaultST) {
-    await loadPair(defaultST);
-  }
+  if (sel.value) await loadPair(sel.value);
+  else if (defaultST) await loadPair(defaultST);
 
-  sel.addEventListener("change", async (e) => {
-    await loadPair(e.target.value);
-  });
+  // Keep headings in sync right after the first render
+  updateDomTitles(DATASET);
+  bumpChartTitlesToCurrentDataset();
+
+  sel.addEventListener("change", async (e) => { await loadPair(e.target.value); });
 
   document.getElementById("btn-refresh").addEventListener("click", async () => {
     const st = sel.value;
@@ -289,117 +364,103 @@ async function boot() {
     if (sel.value) await loadPair(sel.value);
   });
 
+  const dsSel = document.getElementById("dataset-select");
+  if (dsSel) {
+    dsSel.value = DATASET;
+    dsSel.addEventListener("change", async () => {
+      DATASET = dsSel.value;               // "evictions" | "payday"
+      const st = sel.value;
+      await loadManifest();                // reload manifest for chosen dataset
+      sel.value = st in (state.map || {}) ? st : (Object.keys(state.map)[0] || "");
+      if (sel.value) await loadPair(sel.value);
+      await loadFemaPair();                // keep FEMA/No-FEMA pair in sync
+
+      // Refresh visible titles/captions + headings
+      updateDomTitles(DATASET);
+      bumpChartTitlesToCurrentDataset();
+    });
+  }
+
   document.getElementById("save-evict").addEventListener("click", () => {
     const ch = state.charts.evict; if (!ch) return;
-    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_evictions.png"; a.click();
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = (DATASET === "payday" ? "event-study_txvolume.png" : "event-study_evictions.png");
+    a.click();
   });
   document.getElementById("save-filing").addEventListener("click", () => {
     const ch = state.charts.filing; if (!ch) return;
-    const a = document.createElement("a"); a.href = ch.toBase64Image(); a.download = "event-study_filings.png"; a.click();
+    const a = document.createElement("a");
+    a.href = ch.toBase64Image();
+    a.download = (DATASET === "payday" ? "event-study_default.png" : "event-study_filings.png");
+    a.click();
   });
 }
 
-boot().catch(err => {
-  alert("Error: " + err.message);
-  console.error(err);
-});
+boot().catch(err => { alert("Error: " + err.message); console.error(err); });
 
-/* ========================= FEMA SECTION =========================
-   FEMA results (second pair) with its own method/cohort controls.
-   Slugs:
-   - FEMA cohort:  fema_{method}_hurricane_{outcome}.json
-   - No-FEMA:      fema_{method}_nofema_hurricane_{outcome}.json
-   This section auto-detects whether data_fema is at:
-     - event-study/data_fema/...   (docs/event-study/data_fema)
-     - or ../data_fema/...         (docs/data_fema)
-*/
-let FEMA_PREFIX = "data_fema";
-let femaPrefixChecked = false;
+/* ========================= FEMA SECTION ========================= */
 
-async function ensureFemaPrefix() {
-  if (femaPrefixChecked) return FEMA_PREFIX;
-
-  async function exists(prefix) {
-    try {
-      const r = await fetch(`${prefix}/processed/index.json?v=gh`, { cache: "no-cache" });
-      return r.ok;
-    } catch {
-      return false;
-    }
+function getFemaPaths() {
+  if (DATASET === "payday") {
+    return {
+      es:  (slug) => `../data_payday_fema/processed/event_studies/${slug}.json`,
+      did: (slug) => `../data_payday_fema/processed/did/${slug}.json`,
+    };
   }
-
-  if (await exists("data_fema")) {
-    FEMA_PREFIX = "data_fema";
-  } else if (await exists("../data_fema")) {
-    FEMA_PREFIX = "../data_fema";
-  } else {
-    console.warn("Could not find data_fema at data_fema/ or ../data_fema/");
-  }
-
-  femaPrefixChecked = true;
-  return FEMA_PREFIX;
+  return {
+    es:  (slug) => `../data_fema/processed/event_studies/${slug}.json`,
+    did: (slug) => `../data_fema/processed/did/${slug}.json`,
+  };
 }
 
-function femaUrl(kind, slug) {
-  // kind: "event_studies" | "did"
-  return `${FEMA_PREFIX}/processed/${kind}/${slug}.json?v=gh`;
-}
-
-// Keep separate chart refs for FEMA
 state.femaCharts = { evict: null, filing: null };
 
-// Slug builder
 function femaSlug(method, cohort, outcome) {
-  // FEMA cohort does not include "fema" in the filename
-  if (cohort === "nofema") return `fema_${method}_nofema_hurricane_${outcome}`;
-  return `fema_${method}_hurricane_${outcome}`;
+  return (cohort === "nofema")
+    ? `fema_${method}_nofema_hurricane_${outcome}`
+    : `fema_${method}_hurricane_${outcome}`;
 }
 
-// Write DiD numbers into the FEMA cards
 function showDidInto(prefixBase, did) {
-  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  const q = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   const m = did?.meta || {};
-  set(`${prefixBase}-term`, did?.term ?? "—");
-  set(`${prefixBase}-est`,  fmt.num(did?.estimate));
-  set(`${prefixBase}-se`,   fmt.num(did?.se));
-  set(`${prefixBase}-t`,    fmt.num(did?.t));
-  set(`${prefixBase}-p`,    fmt.p(did?.p));
-  set(`${prefixBase}-ci`,   fmt.ci(did?.ci_low, did?.ci_high));
-  set(`${prefixBase}-dep`,  m.dep_var ?? "—");
-  set(`${prefixBase}-fe`,   m.fixed_effects ?? "—");
-  set(`${prefixBase}-obs`,  m.observations ?? "—");
-  set(`${prefixBase}-rmse`, m.rmse ?? "—");
-  set(`${prefixBase}-r2`,   m.r2 ?? "—");
+  q(`${prefixBase}-term`, did?.term ?? "—");
+  q(`${prefixBase}-est`,  fmt.num(did?.estimate));
+  q(`${prefixBase}-se`,   fmt.num(did?.se));
+  q(`${prefixBase}-t`,    fmt.num(did?.t));
+  q(`${prefixBase}-p`,    fmt.p(did?.p));
+  q(`${prefixBase}-ci`,   fmt.ci(did?.ci_low, did?.ci_high));
+  q(`${prefixBase}-dep`,  m.dep_var ?? "—");
+  q(`${prefixBase}-fe`,   m.fixed_effects ?? "—");
+  q(`${prefixBase}-obs`,  m.observations ?? "—");
+  q(`${prefixBase}-rmse`, m.rmse ?? "—");
+  q(`${prefixBase}-r2`,   m.r2 ?? "—");
 }
 
-// Load one FEMA chart + DiD
-async function loadFemaOne(method, cohort, outcome, opt) {
+async function loadFemaOne(method, cohort, outcome, opt, titleText, prefix) {
   const { canvasId, captionId, missingId, chartKey, didPrefixBase } = opt;
 
-  // destroy existing chart on this canvas if any
   const existing = state.femaCharts[chartKey];
   if (existing && existing.canvas && existing.canvas.id === canvasId) {
-    existing.destroy();
-    state.femaCharts[chartKey] = null;
+    existing.destroy(); state.femaCharts[chartKey] = null;
   }
-
-  await ensureFemaPrefix();
 
   const slug = femaSlug(method, cohort, outcome);
   const missingEl = document.getElementById(missingId);
   const capEl     = document.getElementById(captionId);
 
   try {
-    const es = await fetchJSON(femaUrl("event_studies", slug));
+    const fpaths = getFemaPaths();
+    const es = await fetchJSON(fpaths.es(slug));
     const data = prepareChartData(es);
-    const chart = drawChart(canvasId, data);
+    const chart = drawChart(canvasId, data, `${prefix} — ${titleText}`);
     state.femaCharts[chartKey] = chart;
     if (missingEl) missingEl.style.display = "none";
     if (capEl) capEl.textContent = "Ref line drawn midway between k = −2 and k = 0";
 
-    // Try DiD
     try {
-      const did = await fetchJSON(femaUrl("did", slug));
+      const did = await fetchJSON(fpaths.did(slug));
       showDidInto(didPrefixBase, did);
     } catch {
       showDidInto(didPrefixBase, {});
@@ -412,34 +473,39 @@ async function loadFemaOne(method, cohort, outcome, opt) {
   }
 }
 
-// Load the FEMA pair (Evictions + Filings)
 async function loadFemaPair() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
-  if (!methodSel || !cohortSel) return; // FEMA section not on page
+  if (!methodSel || !cohortSel) return;
 
-  const method = methodSel.value;        // "history" | "psm"
-  const cohort = cohortSel.value;        // "fema" | "nofema"
+  const method = methodSel.value;         // "history" | "psm"
+  const cohort = cohortSel.value;         // "fema" | "nofema"
+  const [leftKey, rightKey] = outcomeKeysFor(DATASET);
+  const lbls = labelsFor(DATASET);
+  const prefix = cohort === "nofema" ? "No-FEMA" : "FEMA";
 
   await Promise.all([
-    loadFemaOne(method, cohort, "evict", {
+    loadFemaOne(method, cohort, leftKey, {
       canvasId: "esFemaEvict",
       captionId: "fema-caption-evict",
       missingId: "fema-missing-evict",
       chartKey: "evict",
       didPrefixBase: "fema-e"
-    }),
-    loadFemaOne(method, cohort, "filing", {
+    }, lbls.left, prefix),
+    loadFemaOne(method, cohort, rightKey, {
       canvasId: "esFemaFiling",
       captionId: "fema-caption-filing",
       missingId: "fema-missing-filing",
       chartKey: "filing",
       didPrefixBase: "fema-f"
-    })
+    }, lbls.right, prefix)
   ]);
+
+  // Update captions/headings + re-title charts if needed
+  updateDomTitles(DATASET);
+  bumpChartTitlesToCurrentDataset();
 }
 
-// Initialize FEMA UI (called after the main boot has run)
 function bootFema() {
   const methodSel = document.getElementById("fema-method-select");
   const cohortSel = document.getElementById("fema-cohort-select");
@@ -447,36 +513,28 @@ function bootFema() {
   const saveE = document.getElementById("fema-save-evict");
   const saveF = document.getElementById("fema-save-filing");
 
-  if (!methodSel || !cohortSel) return; // FEMA section not present
-
-  // Initial load
+  if (!methodSel || !cohortSel) return;
   loadFemaPair();
 
-  // Change handlers
   methodSel.addEventListener("change", loadFemaPair);
   cohortSel.addEventListener("change", loadFemaPair);
   if (refreshBtn) refreshBtn.addEventListener("click", loadFemaPair);
 
-  // Save PNG buttons
   if (saveE) saveE.addEventListener("click", () => {
-    const ch = state.femaCharts.evict;
-    if (!ch) return;
+    const ch = state.femaCharts.evict; if (!ch) return;
     const a = document.createElement("a");
     a.href = ch.toBase64Image();
-    a.download = "event-study_FEMA_evictions.png";
+    a.download = (DATASET === "payday" ? "event-study_FEMA_txvolume.png" : "event-study_FEMA_evictions.png");
     a.click();
   });
   if (saveF) saveF.addEventListener("click", () => {
-    const ch = state.femaCharts.filing;
-    if (!ch) return;
+    const ch = state.femaCharts.filing; if (!ch) return;
     const a = document.createElement("a");
     a.href = ch.toBase64Image();
-    a.download = "event-study_FEMA_filings.png";
+    a.download = (DATASET === "payday" ? "event-study_FEMA_default.png" : "event-study_FEMA_filings.png");
     a.click();
   });
 }
 
-// Run FEMA boot (after main boot is scheduled)
 bootFema();
 /* ======================= END FEMA SECTION ======================= */
-

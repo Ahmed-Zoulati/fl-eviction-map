@@ -1,0 +1,18 @@
+{
+  "term": "Group:Post",
+  "estimate": -10.836,
+  "se": 1.561,
+  "t": -6.94,
+  "p": 0.0,
+  "ci_low": -13.904,
+  "ci_high": -7.769,
+  "meta": {
+    "dep_var": "nb_transactions",
+    "fixed_effects": "Hurricane_ZIP+Hurricane_event",
+    "inference": "CRV1",
+    "observations": 85131,
+    "rmse": 75.989,
+    "r2": 0.965,
+    "r2_within": 0.0
+  }
+}
