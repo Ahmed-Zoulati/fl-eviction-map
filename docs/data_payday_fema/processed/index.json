@@ -1,0 +1,32 @@
+{
+  "studies": [
+    {
+      "storm_type": "hurricane",
+      "outcome": "transaction_volume",
+      "slug": "fema_history_hurricane_transaction_volume",
+      "label": "FEMA (History) • Hurricane • Transaction Volume",
+      "method": "history"
+    },
+    {
+      "storm_type": "hurricane",
+      "outcome": "default",
+      "slug": "fema_history_hurricane_default",
+      "label": "FEMA (History) • Hurricane • Default",
+      "method": "history"
+    },
+    {
+      "storm_type": "hurricane",
+      "outcome": "transaction_volume",
+      "slug": "fema_psm_hurricane_transaction_volume",
+      "label": "FEMA (PSM) • Hurricane • Transaction Volume",
+      "method": "psm"
+    },
+    {
+      "storm_type": "hurricane",
+      "outcome": "default",
+      "slug": "fema_psm_hurricane_default",
+      "label": "FEMA (PSM) • Hurricane • Default",
+      "method": "psm"
+    }
+  ]
+}

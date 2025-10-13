@@ -1,0 +1,15 @@
+{
+  "studies": [
+    { "storm_type": "hurricane", "outcome": "evict",  "slug": "fema_history_nofema_hurricane_evict",  "label": "No-FEMA (History) • Hurricane • Evictions", "method": "history", "treated": "no_fema" },
+    { "storm_type": "hurricane", "outcome": "filing", "slug": "fema_history_nofema_hurricane_filing", "label": "No-FEMA (History) • Hurricane • Filings",   "method": "history", "treated": "no_fema" },
+
+    { "storm_type": "hurricane", "outcome": "evict",  "slug": "fema_psm_nofema_hurricane_evict",      "label": "No-FEMA (PSM) • Hurricane • Evictions",    "method": "psm",     "treated": "no_fema" },
+    { "storm_type": "hurricane", "outcome": "filing", "slug": "fema_psm_nofema_hurricane_filing",     "label": "No-FEMA (PSM) • Hurricane • Filings",      "method": "psm",     "treated": "no_fema" },
+
+    { "storm_type": "hurricane", "outcome": "evict",  "slug": "fema_history_hurricane_evict",         "label": "FEMA (History) • Hurricane • Evictions",   "method": "history", "treated": "fema" },
+    { "storm_type": "hurricane", "outcome": "filing", "slug": "fema_history_hurricane_filing",        "label": "FEMA (History) • Hurricane • Filings",     "method": "history", "treated": "fema" },
+
+    { "storm_type": "hurricane", "outcome": "evict",  "slug": "fema_psm_hurricane_evict",             "label": "FEMA (PSM) • Hurricane • Evictions",       "method": "psm",     "treated": "fema" },
+    { "storm_type": "hurricane", "outcome": "filing", "slug": "fema_psm_hurricane_filing",            "label": "FEMA (PSM) • Hurricane • Filings",         "method": "psm",     "treated": "fema" }
+  ]
+}

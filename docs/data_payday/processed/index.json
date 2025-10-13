@@ -1,0 +1,12 @@
+{
+  "studies": [
+    { "storm_type": "hurricane", "outcome": "transaction_volume", "slug": "payday_hurricane_transaction_volume" },
+    { "storm_type": "hurricane", "outcome": "default",            "slug": "payday_hurricane_default" },
+
+    { "storm_type": "tropical",  "outcome": "transaction_volume", "slug": "payday_tropical_transaction_volume" },
+    { "storm_type": "tropical",  "outcome": "default",            "slug": "payday_tropical_default" },
+
+    { "storm_type": "both",      "outcome": "transaction_volume", "slug": "payday_both_storms_transaction_volume" },
+    { "storm_type": "both",      "outcome": "default",            "slug": "payday_both_storms_default" }
+  ]
+}

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Event Study Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./css/styles.css" />
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+</head>
+<body>
+  <header class="container">
+    <h1>Event Study Viewer</h1>
+    <p class="sub">Choose a storm type to view event studies for both outcomes side-by-side. DiD summaries included.</p>
+  </header>
+
+  <!-- Add this near the existing controls -->
+  <label for="dataset-select" style="font-weight:600;">Dataset:</label>
+  <select id="dataset-select">
+    <option value="evictions" selected>Evictions</option>
+    <option value="payday">Payday loans</option>
+  </select>
+
+  <main class="container">
+    <section class="controls">
+      <label>
+        Storm type:
+        <select id="storm-select">
+          <option value="">Loading…</option>
+        </select>
+      </label>
+      <button id="btn-refresh">Reload data</button>
+    </section>
+
+    <section class="grid-two">
+      <!-- Evictions -->
+      <div class="card">
+        <h3>Evictions</h3>
+        <div class="chart-wrap">
+          <canvas id="esChartEvict"></canvas>
+        </div>
+        <div class="muted" id="chart-caption-evict">Event time = months; ref period ≈ −1 (midpoint −2…0)</div>
+        <div class="actions">
+          <button id="save-evict">Save PNG</button>
+        </div>
+        <div class="did-card">
+          <div class="did-title">DiD Summary</div>
+          <div><strong>Term:</strong> <span id="did-e-term">—</span></div>
+          <div><strong>Estimate:</strong> <span id="did-e-est">—</span></div>
+          <div><strong>Std. Error:</strong> <span id="did-e-se">—</span></div>
+          <div><strong>t:</strong> <span id="did-e-t">—</span></div>
+          <div><strong>p:</strong> <span id="did-e-p">—</span></div>
+          <div><strong>95% CI:</strong> <span id="did-e-ci">—</span></div>
+          <hr/>
+          <div><strong>Dep. var.:</strong> <span id="did-e-dep">—</span></div>
+          <div><strong>FE:</strong> <span id="did-e-fe">—</span></div>
+          <div><strong>Obs.:</strong> <span id="did-e-obs">—</span></div>
+          <div><strong>RMSE:</strong> <span id="did-e-rmse">—</span></div>
+          <div><strong>R²:</strong> <span id="did-e-r2">—</span></div>
+        </div>
+        <div class="muted" id="missing-evict" style="display:none">No eviction study found for this storm type.</div>
+      </div>
+
+      <!-- Filings -->
+      <div class="card">
+        <h3>Filings</h3>
+        <div class="chart-wrap">
+          <canvas id="esChartFiling"></canvas>
+        </div>
+        <div class="muted" id="chart-caption-filing">Event time = months; ref period ≈ −1 (midpoint −2…0)</div>
+        <div class="actions">
+          <button id="save-filing">Save PNG</button>
+        </div>
+        <div class="did-card">
+          <div class="did-title">DiD Summary</div>
+          <div><strong>Term:</strong> <span id="did-f-term">—</span></div>
+          <div><strong>Estimate:</strong> <span id="did-f-est">—</span></div>
+          <div><strong>Std. Error:</strong> <span id="did-f-se">—</span></div>
+          <div><strong>t:</strong> <span id="did-f-t">—</span></div>
+          <div><strong>p:</strong> <span id="did-f-p">—</span></div>
+          <div><strong>95% CI:</strong> <span id="did-f-ci">—</span></div>
+          <hr/>
+          <div><strong>Dep. var.:</strong> <span id="did-f-dep">—</span></div>
+          <div><strong>FE:</strong> <span id="did-f-fe">—</span></div>
+          <div><strong>Obs.:</strong> <span id="did-f-obs">—</span></div>
+          <div><strong>RMSE:</strong> <span id="did-f-rmse">—</span></div>
+          <div><strong>R²:</strong> <span id="did-f-r2">—</span></div>
+        </div>
+        <div class="muted" id="missing-filing" style="display:none">No filing study found for this storm type.</div>
+      </div>
+    </section>
+  </main>
+
+  <hr style="border:none;border-top:1px solid #e5e7eb; margin:20px 0;" />
+
+  <section class="controls">
+    <strong style="margin-right:8px">FEMA cohorts:</strong>
+    <label>
+      Method:
+      <select id="fema-method-select">
+        <option value="history" selected>History</option>
+        <option value="psm">PSM</option>
+      </select>
+    </label>
+    <label>
+      Cohort:
+      <select id="fema-cohort-select">
+        <option value="fema" selected>FEMA</option>
+        <option value="nofema">No-FEMA</option>
+      </select>
+    </label>
+    <button id="fema-btn-refresh">Reload data</button>
+  </section>
+
+  <section class="grid-two">
+    <!-- FEMA Evictions -->
+    <div class="card">
+      <h3>FEMA — Evictions</h3>
+      <div class="chart-wrap">
+        <canvas id="esFemaEvict"></canvas>
+      </div>
+      <div class="muted" id="fema-caption-evict">Event time = months; ref period ≈ −1 (midpoint −2…0)</div>
+      <div class="actions">
+        <button id="fema-save-evict">Save PNG</button>
+      </div>
+      <div class="did-card">
+        <div class="did-title">DiD Summary</div>
+        <div><strong>Term:</strong> <span id="fema-e-term">—</span></div>
+        <div><strong>Estimate:</strong> <span id="fema-e-est">—</span></div>
+        <div><strong>Std. Error:</strong> <span id="fema-e-se">—</span></div>
+        <div><strong>t:</strong> <span id="fema-e-t">—</span></div>
+        <div><strong>p:</strong> <span id="fema-e-p">—</span></div>
+        <div><strong>95% CI:</strong> <span id="fema-e-ci">—</span></div>
+        <hr/>
+        <div><strong>Dep. var.:</strong> <span id="fema-e-dep">—</span></div>
+        <div><strong>FE:</strong> <span id="fema-e-fe">—</span></div>
+        <div><strong>Obs.:</strong> <span id="fema-e-obs">—</span></div>
+        <div><strong>RMSE:</strong> <span id="fema-e-rmse">—</span></div>
+        <div><strong>R²:</strong> <span id="fema-e-r2">—</span></div>
+      </div>
+      <div class="muted" id="fema-missing-evict" style="display:none">No FEMA eviction study found for this selection.</div>
+    </div>
+
+    <!-- FEMA Filings -->
+    <div class="card">
+      <h3>FEMA — Filings</h3>
+      <div class="chart-wrap">
+        <canvas id="esFemaFiling"></canvas>
+      </div>
+      <div class="muted" id="fema-caption-filing">Event time = months; ref period ≈ −1 (midpoint −2…0)</div>
+      <div class="actions">
+        <button id="fema-save-filing">Save PNG</button>
+      </div>
+      <div class="did-card">
+        <div class="did-title">DiD Summary</div>
+        <div><strong>Term:</strong> <span id="fema-f-term">—</span></div>
+        <div><strong>Estimate:</strong> <span id="fema-f-est">—</span></div>
+        <div><strong>Std. Error:</strong> <span id="fema-f-se">—</span></div>
+        <div><strong>t:</strong> <span id="fema-f-t">—</span></div>
+        <div><strong>p:</strong> <span id="fema-f-p">—</span></div>
+        <div><strong>95% CI:</strong> <span id="fema-f-ci">—</span></div>
+        <hr/>
+        <div><strong>Dep. var.:</strong> <span id="fema-f-dep">—</span></div>
+        <div><strong>FE:</strong> <span id="fema-f-fe">—</span></div>
+        <div><strong>Obs.:</strong> <span id="fema-f-obs">—</span></div>
+        <div><strong>RMSE:</strong> <span id="fema-f-rmse">—</span></div>
+        <div><strong>R²:</strong> <span id="fema-f-r2">—</span></div>
+      </div>
+      <div class="muted" id="fema-missing-filing" style="display:none">No FEMA filing study found for this selection.</div>
+    </div>
+  </section>
+
+
+  <footer class="container foot">
+    <small>Data source: <code>data/processed/</code> (generated by <code>scripts/parse_results.py</code>)</small>
+  </footer>
+
+  <script src="./js/app.js"></script>
+
+  <a href="../" id="backBtn" style="
+    position:fixed; top:16px; left:16px; z-index:1100;
+    background:#fff; border:3px solid #94a3b8; border-radius:14px;
+    padding:10px 14px; font-weight:700; text-decoration:none;
+    color:#111; letter-spacing:.2px; box-shadow:0 4px 14px rgba(0,0,0,.15);">
+    ← Back to map
+  </a>
+
+</body>
+</html>

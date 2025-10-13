@@ -1,0 +1,19 @@
+# Python env / caches
+.venv/
+__pycache__/
+
+# Local datasets (keep these out of GitHub)
+/data/
+!docs/data/
+!docs/data/*.geojson
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Big artifacts you might create locally
+*.mbtiles
+*.7z
+*.zip
+docs/data/fl_zip_evictions.geojson
+data/fl_zip_evictions.geojson

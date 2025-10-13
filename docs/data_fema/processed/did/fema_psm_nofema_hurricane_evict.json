@@ -1,0 +1,19 @@
+{
+  "term": "Group:Post",
+  "estimate": 0.371,
+  "se": 0.129,
+  "t": 2.865,
+  "p": 0.004,
+  "ci_low": 0.116,
+  "ci_high": 0.625,
+  "meta": {
+    "estimation": "OLS",
+    "dep_var": "weighted_evict",
+    "fixed_effects": "Hurricane_ZIP+Hurricane_event",
+    "inference": "CRV1",
+    "observations": 5244,
+    "rmse": 1.096,
+    "r2": 0.667,
+    "r2_within": 0.002
+  }
+}

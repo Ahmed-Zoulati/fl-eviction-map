@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Florida Eviction Map (ZIP, 2004–2016)</title>
+    <!-- MapLibre GL JS -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+      html, body { height: 100%; margin: 0; }
+
+      /* Full-viewport map behind everything */
+      #map { position: fixed; inset: 0; z-index: 0; }
+
+      /* Control panel pinned top-right, constrained size */
+      .panel {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+
+        width: 360px;                          /* <-- keep it narrow */
+        max-width: calc(100vw - 24px);         /* <-- don’t overflow on small screens */
+        max-height: calc(100vh - 24px);        /* <-- fit within viewport height */
+        overflow: auto;                        /* <-- scroll if content is tall */
+
+        padding: 12px;
+        background: rgba(255,255,255,0.95);
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+        backdrop-filter: blur(2px);
+      }
+
+      /* Optional: friendlier layout on very small screens */
+      @media (max-width: 640px) {
+        .panel {
+          left: 12px;          /* span across the top */
+          right: 12px;
+          width: auto;
+        }
+      }
+    </style>
+
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <div class="panel">
+      <!-- Year slider -->
+      <div class="row">
+        <label for="yearRange">Year:</label>
+        <input id="yearRange" type="range" min="2004" max="2016" step="1" value="2004" />
+        <span id="yearValue">2004</span>
+      </div>
+
+      <!-- Circles metric -->
+      <div class="row">
+        <label for="circleMetric" style="min-width: 90px;">Circle metric:</label>
+        <select id="circleMetric" style="flex:1; padding:6px 8px; border:1px solid #ddd; border-radius:8px;">
+          <option value="filing_rate" selected>Filing rate (%)</option>
+          <option value="evict_rate">Eviction rate (%)</option>
+        </select>
+      </div>
+
+      <!-- Show/Hide circles -->
+      <div class="row">
+        <label for="circleToggle" style="min-width: 90px;">Show circles:</label>
+        <input id="circleToggle" type="checkbox" checked />
+      </div>
+
+      <!-- ZIP search + Reset -->
+      <div class="row">
+        <input id="zipInput" type="text" placeholder="Go to ZIP (e.g., 33139)" style="flex:1; padding:6px 8px; border:1px solid #ddd; border-radius:8px;">
+        <button id="zipGo" style="padding:6px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer;">Go</button>
+        <button id="resetView" style="padding:6px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer;">Reset</button>
+      </div>
+
+      <!-- Main legend: renter households -->
+      <div class="legend">
+        <div><strong>Renter households</strong></div>
+        <div class="legend-scale">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="legend-labels">
+          <span>0–500</span><span>500–1k</span><span>1k–2k</span><span>2k–5k</span><span>5k–10k</span><span>10k+</span>
+        </div>
+      </div>
+
+      <!-- Storm toggles -->
+      <div class="row" style="margin-top:8px;">
+        <label style="min-width: 90px;">Storm outlines:</label>
+        <label style="display:flex;align-items:center;gap:6px;"><input id="showHurr" type="checkbox" checked> Hurricane</label>
+        <label style="display:flex;align-items:center;gap:6px;"><input id="showTs" type="checkbox" checked> Tropical</label>
+      </div>
+
+      <!-- Storm treatment legend -->
+      <div class="legend" style="margin-top:4px;">
+        <div><strong>Storm treatment</strong></div>
+        <div style="display:grid;grid-template-columns:24px auto;gap:6px 8px;align-items:center;margin-top:6px;font-size:12px;color:#333;">
+          <span style="display:block;height:0;border-top:3px solid #f97316;"></span><span>Hurricane (treated ZIPs)</span>
+          <span style="display:block;height:0;border-top:3px dashed #0ea5e9;"></span><span>Tropical storm (treated ZIPs)</span>
+        </div>
+      </div>
+
+      <!-- Per-storm controls (JS populates; defaults unchecked) -->
+      <div class="legend" style="margin-top:8px;">
+        <div><strong>Storms this year</strong></div>
+
+        <div id="stormList" style="
+          margin-top:6px;
+          display:grid;
+          grid-template-columns: repeat(2, minmax(0,1fr));
+          gap:6px 12px;
+          align-items:center;
+          font-size:12px;">
+        </div>
+
+        <div class="row" style="margin-top:8px; gap:8px;">
+          <button id="stormsAll"  style="padding:6px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer;">Select all</button>
+          <button id="stormsNone" style="padding:6px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer;">Select none</button>
+        </div>
+
+        <div id="stormListEmpty" class="muted" style="display:none; margin-top:6px;">
+          No storms with cones for this year.
+        </div>
+      </div>
+
+      <div class="hint">Hover a ZIP to see details</div>
+    </div>
+
+    <div id="tooltip" class="tooltip" style="display:none;"></div>
+
+    <script>
+      // ================== CONFIG ==================
+      // Use absolute paths to the repo root; the ZIP GeoJSON lives under /data/, not /docs/data/
+      const GEOJSON_URL     = "/data/fl_zip_evictions.geojson?v=local";
+      const STORM_CONES_URL = "/docs/storms/storm_cones.min.geojson?v=local";
+      const WORLD_LAND_URL  = "/docs/base/world_land_110m.min.geojson?v=local";
+      console.log("[WEB] GEOJSON_URL:", GEOJSON_URL);
+      console.log("[WEB] STORM_CONES_URL:", STORM_CONES_URL);
+      console.log("[WEB] WORLD_LAND_URL:", WORLD_LAND_URL);
+
+      // ================== HELPERS ==================
+      function currentYear() { return parseInt(document.getElementById("yearRange").value, 10); }
+      // Coerce to numbers so string/number mismatches don't break filters
+      function yearFilterExpr(yr) { return ["==", ["to-number", ["get", "year"]], +yr]; }
+
+      const hhStops  = [500, 1000, 2000, 5000, 10000];
+      const hhLabels = ["0–500","500–1k","1k–2k","2k–5k","5k–10k","10k+"];
+
+      function makeHouseholdsFillColor() {
+        return [
+          "step",
+          ["coalesce", ["to-number", ["get", "households"]], -1],
+          "#f2f0f7", hhStops[0],
+          "#dadaeb", hhStops[1],
+          "#bcbddc", hhStops[2],
+          "#9e9ac8", hhStops[3],
+          "#756bb1", hhStops[4],
+          "#54278f"
+        ];
+      }
+
+      function setLegend(title, labels) {
+        const legendTitle = document.querySelector(".legend > div:first-child");
+        if (legendTitle) legendTitle.innerHTML = `<strong>${title}</strong>`;
+        const labelSpans = document.querySelectorAll(".legend-labels span");
+        labelSpans.forEach((el, i) => el.textContent = labels[i] || "");
+      }
+
+      function makeCircleRadiusExpr(metric) {
+        return [
+          "interpolate", ["linear"],
+          ["coalesce", ["to-number", ["get", metric]], -1],
+          0, 0,
+          1, 4,
+          2, 6,
+          5, 10,
+          10, 14,
+          20, 18
+        ];
+      }
+
+      function geomBounds(geom) {
+        if (!geom) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        function walk(coords) {
+          if (typeof coords[0] === 'number') {
+            const x = coords[0], y = coords[1];
+            if (x < minX) minX = x; if (y < minY) minY = y;
+            if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+          } else {
+            for (const c of coords) walk(c);
+          }
+        }
+        if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') {
+          walk(geom.coordinates);
+          return [[minX, minY], [maxX, maxY]];
+        }
+        return null;
+      }
+      function normZip(s) {
+        const digits = String(s || '').match(/\d+/g);
+        const d = digits ? digits.join('') : '';
+        return d.padStart(5, '0').slice(0, 5);
+      }
+      function stormKey(name, year) { return `${String(name||'').toUpperCase()}-${year}`; }
+
+      // ================== UI ELEMENTS ==================
+      const circleMetric = document.getElementById('circleMetric');
+      const circleToggle = document.getElementById('circleToggle');
+      const showHurr = document.getElementById('showHurr');
+      const showTs   = document.getElementById('showTs');
+      const yrRange  = document.getElementById("yearRange");
+      const yrValue  = document.getElementById("yearValue");
+      const zipInput = document.getElementById('zipInput');
+      const zipGo    = document.getElementById('zipGo');
+      const resetBtn = document.getElementById('resetView');
+
+      const stormListDiv   = document.getElementById('stormList');
+      const stormsAllBtn   = document.getElementById('stormsAll');
+      const stormsNoneBtn  = document.getElementById('stormsNone');
+      const stormListEmpty = document.getElementById('stormListEmpty');
+
+      // Per-storm state
+      let stormsByYear = new Map();      // Map<number, Array<{key,name,year,storm_type}>>
+      let selectedStormKeys = new Set(); // Set<string>, e.g. "ALBERTO-2006"
+
+      // ================== MAP ==================
+      const map = new maplibregl.Map({
+        container: "map",
+        style: {
+          "version": 8,
+          "sources": {
+            "zips": { "type": "geojson", "data": GEOJSON_URL }
+          },
+          "layers": [
+            { "id": "bg", "type": "background", "paint": { "background-color": "#bfe3ff" } }
+          ]
+        },
+        center: [-82.56, 27.82],
+        zoom: 6.5
+      });
+
+      // Nudge MapLibre to compute size once layout is stable
+      requestAnimationFrame(() => map.resize());
+      window.addEventListener("load", () => map.resize());
+      window.addEventListener("resize", () => map.resize());
+
+
+      // ZIP bounds cache for search
+      let zipBoundsMap = new Map();
+
+      // --- Build per-year storm index (after map exists) ---
+      fetch(STORM_CONES_URL).then(r => r.json()).then(gc => {
+        stormsByYear.clear();
+        for (const f of gc.features || []) {
+          const p = f.properties || {};
+          const name = String(p.name || '').toUpperCase();
+          const year = +p.year;
+          const type = p.storm_type || null;
+          if (!name || !year) continue;
+          const key = stormKey(name, year);
+          const arr = stormsByYear.get(year) || [];
+          arr.push({ key, name, year, storm_type: type });
+          stormsByYear.set(year, arr);
+        }
+        for (const [y, arr] of stormsByYear.entries()) arr.sort((a,b)=> a.name.localeCompare(b.name));
+        selectedStormKeys.clear();        // default unchecked
+        renderStormList(currentYear());   // draw the list for the current year
+        // don't call applyConeFilters yet — layers added in map.on('load')
+      });
+
+      // Toggle outlines + cones visibility together
+      function applyStormVis() {
+        const visH = showHurr.checked ? 'visible' : 'none';
+        const visT = showTs.checked   ? 'visible' : 'none';
+        if (map.getLayer('storm-hurr')) map.setLayoutProperty('storm-hurr', 'visibility', visH);
+        if (map.getLayer('storm-ts'))   map.setLayoutProperty('storm-ts',   'visibility', visT);
+        if (map.getLayer('cone-hurr-fill'))    map.setLayoutProperty('cone-hurr-fill',    'visibility', visH);
+        if (map.getLayer('cone-hurr-outline')) map.setLayoutProperty('cone-hurr-outline', 'visibility', visH);
+        if (map.getLayer('cone-ts-fill'))      map.setLayoutProperty('cone-ts-fill',      'visibility', visT);
+        if (map.getLayer('cone-ts-outline'))   map.setLayoutProperty('cone-ts-outline',   'visibility', visT);
+      }
+
+      // Apply cone filters (year + type + selected names)
+      function applyConeFilters() {
+        const yf = yearFilterExpr(currentYear());
+        const keys = Array.from(selectedStormKeys); // ["ALBERTO-2006", ...]
+        const keyExpr = ["concat", ["get","name"], "-", ["to-string", ["get","year"]]];
+        const filterH = ["all", yf, ["==", ["get","storm_type"], "hurricane"], ["in", keyExpr, ["literal", keys]]];
+        const filterT = ["all", yf, ["==", ["get","storm_type"], "tropical"],  ["in", keyExpr, ["literal", keys]]];
+        if (map.getLayer("cone-hurr-fill"))    map.setFilter("cone-hurr-fill",    filterH);
+        if (map.getLayer("cone-hurr-outline")) map.setFilter("cone-hurr-outline", filterH);
+        if (map.getLayer("cone-ts-fill"))      map.setFilter("cone-ts-fill",      filterT);
+        if (map.getLayer("cone-ts-outline"))   map.setFilter("cone-ts-outline",   filterT);
+      }
+
+      // Render the per-storm checkbox list for a given year (unchecked by default)
+      function renderStormList(year) {
+        const storms = stormsByYear.get(year) || [];
+        stormListDiv.innerHTML = "";
+        stormListEmpty.style.display = storms.length ? "none" : "block";
+        if (!storms.length) return;
+
+        // If nothing selected for THIS year yet → select all by default
+        const hasAnyForYear = storms.some(s => selectedStormKeys.has(s.key));
+        if (!hasAnyForYear) {
+          storms.forEach(s => selectedStormKeys.add(s.key));
+        }
+
+        for (const s of storms) {
+          const id = `storm_${s.key}`;
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.alignItems = "center";
+          label.style.gap = "6px";
+          label.htmlFor = id;
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.id = id;
+          cb.value = s.key;
+          cb.checked = selectedStormKeys.has(s.key);
+
+          // update selection + map when user toggles a box
+          cb.addEventListener("change", () => {
+            if (cb.checked) selectedStormKeys.add(s.key);
+            else selectedStormKeys.delete(s.key);
+            applyConeFilters();
+          });
+
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode(` ${s.name} (${s.year})`));
+          stormListDiv.appendChild(label);
+        }
+
+        // make sure map respects the (possibly new) selection
+        applyConeFilters();
+      }
+
+      map.on("load", () => {
+
+        // Optional: log if the land file is missing
+        fetch(WORLD_LAND_URL, {cache:"no-cache"}).then(r => {
+          if (!r.ok) console.warn("WORLD_LAND_URL not found:", WORLD_LAND_URL);
+        }).catch(() => console.warn("WORLD_LAND_URL not reachable:", WORLD_LAND_URL));
+
+
+        // --- World basemap: continents only ---
+        map.addSource("worldland", { type: "geojson", data: WORLD_LAND_URL });
+
+        // pale land fill
+        map.addLayer({
+          id: "world-land-fill",
+          type: "fill",
+          source: "worldland",
+          paint: { "fill-color": "#f8fafc" }   // light grey-white land
+        });
+
+        // thin coastline outline
+        map.addLayer({
+          id: "world-land-outline",
+          type: "line",
+          source: "worldland",
+          paint: { "line-color": "#94a3b8", "line-width": 0.5 }
+        });
+
+
+
+        // ZIP fill + outline
+        map.addLayer({
+          "id": "zips-fill",
+          "type": "fill",
+          "source": "zips",
+          "paint": { "fill-color": makeHouseholdsFillColor(), "fill-opacity": 0.85 },
+          "filter": yearFilterExpr(currentYear())
+        });
+        map.addLayer({
+          "id": "zips-outline",
+          "type": "line",
+          "source": "zips",
+          "paint": { "line-color": "#fff", "line-width": 0.5 },
+          "filter": yearFilterExpr(currentYear())
+        });
+
+        // ---- Storm CONES source + layers (start with no storms selected) ----
+        map.addSource("stormCones", { type: "geojson", data: STORM_CONES_URL });
+        const noneKeys = ["literal", []];
+        const keyExpr = ["concat", ["get","name"], "-", ["to-string", ["get","year"]]];
+
+        // Hurricanes (solid orange)
+        map.addLayer({
+          id: "cone-hurr-fill",
+          type: "fill",
+          source: "stormCones",
+          paint: { "fill-color": "#f97316", "fill-opacity": 0.14 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "hurricane"], ["in", keyExpr, noneKeys]]
+        });
+        map.addLayer({
+          id: "cone-hurr-outline",
+          type: "line",
+          source: "stormCones",
+          paint: { "line-color": "#f97316", "line-width": 1.2, "line-opacity": 0.9 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "hurricane"], ["in", keyExpr, noneKeys]]
+        });
+
+        // Tropical storms (blue dashed)
+        map.addLayer({
+          id: "cone-ts-fill",
+          type: "fill",
+          source: "stormCones",
+          paint: { "fill-color": "#0ea5e9", "fill-opacity": 0.12 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "tropical"], ["in", keyExpr, noneKeys]]
+        });
+        map.addLayer({
+          id: "cone-ts-outline",
+          type: "line",
+          source: "stormCones",
+          paint: { "line-color": "#0ea5e9", "line-width": 1.2, "line-dasharray": [2,2], "line-opacity": 0.9 },
+          filter: ["all", yearFilterExpr(currentYear()), ["==", ["get", "storm_type"], "tropical"], ["in", keyExpr, noneKeys]]
+        });
+
+        // ---- Treated ZIP outlines (coerce to number) ----
+        map.addLayer({
+          "id": "storm-hurr",
+          "type": "line",
+          "source": "zips",
+          "paint": { "line-color": "#f97316", "line-width": 2.5, "line-opacity": 0.9 },
+          "filter": ["all", yearFilterExpr(currentYear()), ["==", ["to-number", ["get", "treated_hurr"]], 1]]
+        });
+        map.addLayer({
+          "id": "storm-ts",
+          "type": "line",
+          "source": "zips",
+          "paint": { "line-color": "#0ea5e9", "line-width": 2.5, "line-dasharray": [2,2], "line-opacity": 0.9 },
+          "filter": ["all", yearFilterExpr(currentYear()), ["==", ["to-number", ["get", "treated_ts"]], 1]]
+        });
+
+        // Hover tooltip for ZIPs
+        const tooltip = document.getElementById("tooltip");
+        map.on("mousemove", "zips-fill", (e) => {
+          const f = e.features && e.features[0];
+          if (!f) { tooltip.style.display = "none"; return; }
+          const p = f.properties || {};
+          const fr = p.filing_rate != null ? Number(p.filing_rate).toFixed(2) : "NA";
+          const er = p.evict_rate  != null ? Number(p.evict_rate).toFixed(2)  : "NA";
+          const filings = (p.filings ?? "NA");
+          const evict   = (p.evict   ?? "NA");
+          const hh      = (p.households ?? "NA");
+          const which = (circleMetric && circleMetric.value) ? circleMetric.value : "filing_rate";
+          const whichLabel = (which === "evict_rate") ? "Eviction rate" : "Filing rate";
+          const whichVal   = (which === "evict_rate") ? er : fr;
+          const hurr = Number(p.treated_hurr) === 1;
+          const tstr = Number(p.treated_ts)   === 1;
+          let stormTxt = "None";
+          if (hurr && tstr) stormTxt = "Hurricane + Tropical storm";
+          else if (hurr)    stormTxt = "Hurricane";
+          else if (tstr)    stormTxt = "Tropical storm";
+          tooltip.innerHTML = `
+            <div><strong>ZIP ${p.zip}</strong></div>
+            <div>${p.year}</div>
+            <div>Filing rate: <strong>${fr}%</strong> · Eviction rate: <strong>${er}%</strong></div>
+            <div style="font-size:11px;color:#dc2626;">Circles use: ${whichLabel} (${whichVal}%)</div>
+            <div>Filings: ${filings} · Evictions: ${evict}</div>
+            <div>Renter households: ${hh}</div>
+            <div>Storm treatment: ${stormTxt}</div>`;
+          tooltip.style.display = "block";
+          tooltip.style.left = (e.point.x + 12) + "px";
+          tooltip.style.top  = (e.point.y + 12) + "px";
+        });
+        map.on("mouseleave", "zips-fill", () => { tooltip.style.display = "none"; });
+
+        setLegend("Renter households", hhLabels);
+
+        // Build circle points + ZIP bounds from same GeoJSON
+        fetch(GEOJSON_URL).then(r => r.json()).then(geo => {
+          console.log("[WEB] ZIP sample props:", geo.features?.[0]?.properties); // sanity check
+          const pts = { type: "FeatureCollection", features: [] };
+          for (const f of geo.features) {
+            const b = geomBounds(f.geometry);
+            if (!b) continue;
+            const cx = (b[0][0] + b[1][0]) / 2, cy = (b[0][1] + b[1][1]) / 2;
+            pts.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [cx, cy] }, properties: f.properties });
+            const zip = f.properties && f.properties.zip;
+            if (zip && !zipBoundsMap.has(zip)) zipBoundsMap.set(zip, b);
+          }
+          map.addSource("zipPoints", { type: "geojson", data: pts });
+          map.addLayer({
+            "id": "zip-circles",
+            "type": "circle",
+            "source": "zipPoints",
+            "paint": {
+              "circle-color": "#dc2626", "circle-opacity": 0.55,
+              "circle-stroke-color": "#ffffff", "circle-stroke-width": 0.8,
+              "circle-radius": makeCircleRadiusExpr(circleMetric.value)
+            },
+            "filter": yearFilterExpr(currentYear())
+          });
+          map.setLayoutProperty("zip-circles", "visibility", (circleToggle.checked ? "visible" : "none"));
+        });
+
+        // Respect outline/toggle state on load
+        applyStormVis();
+        // With no storms selected yet, ensure cones are hidden (filters already match none)
+        applyConeFilters();
+        // Force a final layout pass & repaint after layers are in
+        map.resize();
+        map.triggerRepaint();
+      });
+
+      // ================== EVENT HANDLERS ==================
+      circleMetric.addEventListener("change", () => {
+        if (map.getLayer("zip-circles")) {
+          map.setPaintProperty("zip-circles", "circle-radius", makeCircleRadiusExpr(circleMetric.value));
+        }
+      });
+
+      circleToggle.addEventListener('change', () => {
+        const vis = circleToggle.checked ? 'visible' : 'none';
+        if (map.getLayer('zip-circles')) map.setLayoutProperty('zip-circles', 'visibility', vis);
+      });
+
+      showHurr.addEventListener('change', applyStormVis);
+      showTs.addEventListener('change',   applyStormVis);
+
+      // Per-storm checkbox changes (event delegation)
+      stormListDiv.addEventListener("change", (e) => {
+        if (e.target && e.target.matches('input[type="checkbox"]')) {
+          const key = e.target.value;
+          if (e.target.checked) selectedStormKeys.add(key);
+          else selectedStormKeys.delete(key);
+          applyConeFilters();
+        }
+      });
+
+      stormsAllBtn.addEventListener("click", () => {
+        const storms = stormsByYear.get(currentYear()) || [];
+        selectedStormKeys = new Set(storms.map(s => s.key));
+        stormListDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+        applyConeFilters();
+      });
+
+      stormsNoneBtn.addEventListener("click", () => {
+        selectedStormKeys.clear();
+        stormListDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+        applyConeFilters();
+      });
+
+      // Year slider
+      yrRange.addEventListener("input", () => {
+        yrValue.textContent = yrRange.value;
+        const yf = yearFilterExpr(currentYear());
+        if (map.getLayer("zips-fill"))    map.setFilter("zips-fill", yf);
+        if (map.getLayer("zips-outline")) map.setFilter("zips-outline", yf);
+        if (map.getLayer("zip-circles"))  map.setFilter("zip-circles", yf);
+        // Treated ZIP outlines (coerce to number)
+        if (map.getLayer("storm-hurr"))   map.setFilter("storm-hurr", ["all", yf, ["==", ["to-number", ["get", "treated_hurr"]], 1]]);
+        if (map.getLayer("storm-ts"))     map.setFilter("storm-ts",   ["all", yf, ["==", ["to-number", ["get", "treated_ts"]], 1]]);
+        // Rebuild per-storm list for the new year (defaults unchecked)
+        selectedStormKeys.clear();
+        renderStormList(currentYear());
+        applyConeFilters();
+      });
+
+      // ZIP search & reset
+      zipGo.addEventListener('click', () => {
+        const zip = normZip(zipInput.value);
+        const b = zipBoundsMap.get(zip);
+        if (!zip || !b) { alert('ZIP not found. Try a 5-digit Florida ZIP (e.g., 33139).'); return; }
+        map.fitBounds(b, { padding: 20, duration: 500 });
+      });
+      zipInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') zipGo.click(); });
+      resetBtn.addEventListener('click', () => { map.flyTo({ center: [-82.56, 27.82], zoom: 6.5, essential: true }); });
+    </script>
+  </body>
+</html>

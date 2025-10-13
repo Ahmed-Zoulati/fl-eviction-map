@@ -1,0 +1,40 @@
+{
+  "studies": [
+    {
+      "slug": "both_storms_evict",
+      "label": "Hurricane + Tropical \u2014 Evictions",
+      "storm_type": "both",
+      "outcome": "evict"
+    },
+    {
+      "slug": "both_storms_filing",
+      "label": "Hurricane + Tropical \u2014 Filings",
+      "storm_type": "both",
+      "outcome": "filing"
+    },
+    {
+      "slug": "hurricane_only_evict",
+      "label": "Hurricane \u2014 Evictions",
+      "storm_type": "hurricane",
+      "outcome": "evict"
+    },
+    {
+      "slug": "hurricane_only_filing",
+      "label": "Hurricane \u2014 Filings",
+      "storm_type": "hurricane",
+      "outcome": "filing"
+    },
+    {
+      "slug": "tropical_only_evict",
+      "label": "Tropical Storm \u2014 Evictions",
+      "storm_type": "tropical",
+      "outcome": "evict"
+    },
+    {
+      "slug": "tropical_only_filing",
+      "label": "Tropical Storm \u2014 Filings",
+      "storm_type": "tropical",
+      "outcome": "filing"
+    }
+  ]
+}
