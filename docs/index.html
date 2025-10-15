@@ -132,12 +132,21 @@
       box-shadow:0 4px 14px rgba(0,0,0,.15);">
       📈 Event study
     </a>
+    <a href="/fl_eviction_map_template/docs/payday/" id="paydayBtn" style="
+      position:fixed; top:76px; right:16px; z-index:1100;
+      background:#fff; border:3px solid #94a3b8; border-radius:14px;
+      padding:12px 18px; font-size:18px; font-weight:700; line-height:1.1;
+      color:#111; text-decoration:none; letter-spacing:.2px;
+      box-shadow:0 4px 14px rgba(0,0,0,.15);">
+      💵 Payday loan map
+    </a>
+
 
     <script>
       // ================== CONFIG (docs/local) ==================
       // Local: read from repo-root /data/
       const GEOJSON_URL     = "./data/fl_zip_evictions.min.geojson?v=gh";
-      const STORM_CONES_URL = "./storms/storm_cones.min.geojson?v=gh";
+      const STORM_CONES_URL = "./storms/storm_cones.min.geojson?v=gh2";
       const WORLD_LAND_URL  = "./base/world_land_110m.min.geojson?v=gh";
       console.log({ GEOJSON_URL, STORM_CONES_URL, WORLD_LAND_URL });
 

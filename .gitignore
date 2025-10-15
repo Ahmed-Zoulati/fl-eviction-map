@@ -17,3 +17,18 @@ Thumbs.db
 *.zip
 docs/data/fl_zip_evictions.geojson
 data/fl_zip_evictions.geojson
+
+
+# keep only minified geojsons
+docs/**/data_payday/*.geojson
+!docs/**/data_payday/*.min.geojson
+
+# (already recommended before)
+docs/data/*.geojson
+!docs/data/*.min.geojson
+data/**/*.shp
+data/**/*.dbf
+data/**/*.shx
+data/**/*.prj
+data/**/*.cpg
+data/**/*.zip
